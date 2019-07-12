@@ -35,6 +35,8 @@ public:
     // Override parent
     void output_min() override;
 
+    void output_raw(uint8_t chan, uint16_t pwm);
+
     // Map thrust input -1~1 to pwm output 1100~1900
     int16_t calc_thrust_to_pwm(float thrust_in) const;
 

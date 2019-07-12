@@ -219,6 +219,12 @@ void AP_Motors6DOF::output_min()
     }
 }
 
+void AP_Motors6DOF::output_raw(uint8_t chan, uint16_t pwm) {
+    if (motor_enabled[chan]) {
+      rc_write(chan, pwm);
+    }
+}
+
 int16_t AP_Motors6DOF::calc_thrust_to_pwm(float thrust_in) const
 {
     return constrain_int16(1500 + thrust_in * 400, _throttle_radio_min, _throttle_radio_max);

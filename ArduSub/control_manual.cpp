@@ -34,3 +34,46 @@ void Sub::manual_run()
     motors.set_forward(channel_forward->norm_input());
     motors.set_lateral(channel_lateral->norm_input());
 }
+
+// manual_init - initialise manual controller
+bool Sub::raw_init()
+{
+  // set target altitude to zero for reporting
+  pos_control.set_alt_target(0);
+
+  // attitude hold inputs become thrust inputs in manual mode
+  // set to neutral to prevent chaotic behavior (esp. roll/pitch)
+  set_neutral_controls();
+
+  return true;
+}
+
+// raw_run - runs the manual (passthrough) controller
+// should be called at 100hz or more
+void Sub::raw_run()
+{
+  // if not armed set throttle to zero and exit immediately
+  if (!motors.armed()) {
+    motors.set_desired_spool_state(AP_Motors::DESIRED_GROUND_IDLE);
+    attitude_control.set_throttle_out(0,true,g.throttle_filt);
+    attitude_control.relax_attitude_controllers();
+    return;
+  }
+
+  motors.set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
+
+//  1	Pitch
+//  2	Roll
+//  3	Throttle
+//  4	Yaw
+//  5	Forward
+//  6	Lateral
+
+  motors.output_raw(0, channel_pitch->get_radio_in());
+  motors.output_raw(0, channel_roll->get_radio_in());
+  motors.output_raw(0, channel_throttle->get_radio_in());
+  motors.output_raw(0, channel_yaw->get_radio_in());
+  motors.output_raw(0, channel_forward->get_radio_in());
+  motors.output_raw(0, channel_lateral->get_radio_in());
+
+}
