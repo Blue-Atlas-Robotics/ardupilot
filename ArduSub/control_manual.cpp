@@ -70,10 +70,10 @@ void Sub::raw_run()
 //  6	Lateral
 
   motors.output_raw(0, channel_pitch->get_radio_in());
-  motors.output_raw(0, channel_roll->get_radio_in());
-  motors.output_raw(0, channel_throttle->get_radio_in());
-  motors.output_raw(0, channel_yaw->get_radio_in());
-  motors.output_raw(0, channel_forward->get_radio_in());
-  motors.output_raw(0, channel_lateral->get_radio_in());
+  motors.output_raw(1, channel_roll->get_radio_in());
+  motors.output_raw(2, channel_throttle->get_radio_in());
+  motors.output_raw(3, channel_yaw->get_radio_in());
+  motors.output_raw(4, channel_forward->get_radio_in());
+  motors.output_raw(5, channel_lateral->get_radio_in());
 
 }
