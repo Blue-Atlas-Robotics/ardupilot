@@ -537,6 +537,27 @@ MAV_RESULT GCS_MAVLINK_Sub::handle_command_long_packet(const mavlink_command_lon
         }
         return MAV_RESULT_ACCEPTED;
 
+    case MAV_CMD_DO_LAST:
+        // param1 : Reserved
+        // param2 : direction_x
+        // param3 : direction_y
+        // param4 : direction_z
+        // param5 : translation_x
+        // param6 : translation_y
+        // param7 : translation_z
+        if (sub.control_mode == RAW) {
+            sub.motors_raw_pwm[0] = (uint16_t)packet.param2;
+            sub.motors_raw_pwm[1] = (uint16_t)packet.param3;
+            sub.motors_raw_pwm[2] = (uint16_t)packet.param4;
+            sub.motors_raw_pwm[3] = (uint16_t)packet.param5;
+            sub.motors_raw_pwm[4] = (uint16_t)packet.param6;
+            sub.motors_raw_pwm[5] = (uint16_t)packet.param7;
+            return MAV_RESULT_ACCEPTED;
+        } else {
+            return MAV_RESULT_FAILED;
+        }
+
+
     default:
         return GCS_MAVLINK::handle_command_long_packet(packet);
     }

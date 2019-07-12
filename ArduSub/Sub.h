@@ -300,6 +300,9 @@ private:
 
     AP_Motors6DOF motors;
 
+    // raw pwm values for direct motor control
+    uint16_t motors_raw_pwm[6] = {UINT16_MAX, UINT16_MAX, UINT16_MAX, UINT16_MAX, UINT16_MAX, UINT16_MAX};
+
     // GPS variables
     // Sometimes we need to remove the scaling for distance calcs
     float scaleLongDown;
