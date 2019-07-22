@@ -17,9 +17,10 @@
  *       AP_Motors6DOF.cpp - ArduSub motors library
  */
 
+#include "AP_Motors6DOF.h"
+#include "AP_Motors.h"
 #include <AP_BattMonitor/AP_BattMonitor.h>
 #include <AP_HAL/AP_HAL.h>
-#include "AP_Motors6DOF.h"
 
 extern const AP_HAL::HAL& hal;
 
@@ -219,12 +220,6 @@ void AP_Motors6DOF::output_min()
     }
 }
 
-void AP_Motors6DOF::output_raw(uint8_t chan, uint16_t pwm) {
-    if (motor_enabled[chan]) {
-      rc_write(chan, pwm);
-    }
-}
-
 int16_t AP_Motors6DOF::calc_thrust_to_pwm(float thrust_in) const
 {
     return constrain_int16(1500 + thrust_in * 400, _throttle_radio_min, _throttle_radio_max);
@@ -259,7 +254,9 @@ void AP_Motors6DOF::output_to_motors()
         // set motor output based on thrust requests
         for (i=0; i<AP_MOTORS_MAX_NUM_MOTORS; i++) {
             if (motor_enabled[i]) {
-                motor_out[i] = calc_thrust_to_pwm(_thrust_rpyt_out[i]);
+//                motor_out[i] = calc_thrust_to_pwm(_thrust_rpyt_out[i]);
+
+                motor_out[i] = raw_command.pwm[i];
             }
         }
         break;
@@ -549,4 +546,10 @@ void AP_Motors6DOF::output_armed_stabilizing_vectored_6dof()
             _thrust_rpyt_out[i] = constrain_float(_motor_reverse[i]*(rpt_out[i]/rpt_max + yfl_out[i]/yfl_max),-1.0f,1.0f);
         }
     }
+}
+
+void AP_Motors6DOF::set_raw_command(uint8_t chan, uint16_t pwm, uint32_t timestamp)
+{
+    raw_command.pwm[chan] = pwm;
+    raw_command.last_message_ms = timestamp;
 }

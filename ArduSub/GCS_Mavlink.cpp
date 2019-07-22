@@ -539,14 +539,13 @@ MAV_RESULT GCS_MAVLINK_Sub::handle_command_long_packet(const mavlink_command_lon
 
     case MAV_CMD_DO_LAST:
         if (sub.control_mode == RAW) {
-            sub.motors_raw_sp.pwm[AP_MOTORS_MOT_1] = (uint16_t)packet.param2;
-            sub.motors_raw_sp.pwm[AP_MOTORS_MOT_2] = (uint16_t)packet.param3;
-            sub.motors_raw_sp.pwm[AP_MOTORS_MOT_3] = (uint16_t)packet.param4;
-            sub.motors_raw_sp.pwm[AP_MOTORS_MOT_4] = (uint16_t)packet.param5;
-            sub.motors_raw_sp.pwm[AP_MOTORS_MOT_5] = (uint16_t)packet.param6;
-            sub.motors_raw_sp.pwm[AP_MOTORS_MOT_6] = (uint16_t)packet.param7;
 
-            sub.motors_raw_sp.last_message_ms = AP_HAL::millis();
+            sub.motors.set_raw_command(AP_MOTORS_MOT_1, (uint16_t)packet.param2, AP_HAL::millis());
+            sub.motors.set_raw_command(AP_MOTORS_MOT_2, (uint16_t)packet.param3, AP_HAL::millis());
+            sub.motors.set_raw_command(AP_MOTORS_MOT_3, (uint16_t)packet.param4, AP_HAL::millis());
+            sub.motors.set_raw_command(AP_MOTORS_MOT_4, (uint16_t)packet.param5, AP_HAL::millis());
+            sub.motors.set_raw_command(AP_MOTORS_MOT_5, (uint16_t)packet.param6, AP_HAL::millis());
+            sub.motors.set_raw_command(AP_MOTORS_MOT_6, (uint16_t)packet.param7, AP_HAL::millis());
 
             return MAV_RESULT_ACCEPTED;
         } else {

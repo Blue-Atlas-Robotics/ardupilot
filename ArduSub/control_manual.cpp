@@ -56,40 +56,6 @@ void Sub::raw_run() {
         return;
     }
 
-    uint32_t tnow = AP_HAL::millis();
-
-    motors.set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
-
-    // If there is a dedicated message and values for pwm are set - move!
-    for (int i=0; i<6; i++) {
-        if ((motors_raw_sp.pwm[i] != UINT16_MAX) && (tnow - motors_raw_sp.last_message_ms < 1*1000)) {
-            motors.output_raw(i, motors_raw_sp.pwm[i]);
-        } else {
-            motors.output_raw(i, 1500U);
-        }
-    }
-
-    // TODO Check if there is a possibility to use joystick as a override for the emergency.
-//
-//    motors.set_roll(channel_roll->norm_input());
-//    motors.set_pitch(channel_pitch->norm_input());
-//    motors.set_yaw(channel_yaw->norm_input() * g.acro_yaw_p / ACRO_YAW_P);
-//    motors.set_throttle(channel_throttle->norm_input());
-//    motors.set_forward(channel_forward->norm_input());
-//    motors.set_lateral(channel_lateral->norm_input());
-
-//  1	Pitch
-//  2	Roll
-//  3	Throttle
-//  4	Yaw
-//  5	Forward
-//  6	Lateral
-
-//    motors.output_raw(0, channel_pitch->get_radio_in());
-//    motors.output_raw(1, channel_roll->get_radio_in());
-//    motors.output_raw(2, channel_throttle->get_radio_in());
-//    motors.output_raw(3, channel_yaw->get_radio_in());
-//    motors.output_raw(4, channel_forward->get_radio_in());
-//    motors.output_raw(5, channel_lateral->get_radio_in());
+  motors.set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
 
 }

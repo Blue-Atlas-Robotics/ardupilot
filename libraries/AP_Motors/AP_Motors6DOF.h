@@ -43,6 +43,8 @@ public:
     // output_to_motors - sends minimum values out to the motors
     void output_to_motors() override;
 
+    void set_raw_command(uint8_t chan, uint16_t pwm, uint32_t timestamp);
+
     // var_info for holding Parameter information
     static const struct AP_Param::GroupInfo        var_info[];
 
@@ -68,4 +70,15 @@ protected:
     // current limiting
     float _output_limited = 1.0f;
     float _batt_current_last = 0.0f;
+
+    // raw pwm values for direct motor control
+    struct {
+        uint32_t last_message_ms = 0;
+        uint16_t pwm[AP_MOTORS_MAX_NUM_MOTORS] = {UINT16_MAX, UINT16_MAX,
+                                                  UINT16_MAX, UINT16_MAX,
+                                                  UINT16_MAX, UINT16_MAX,
+                                                  UINT16_MAX, UINT16_MAX,
+                                                  UINT16_MAX, UINT16_MAX,
+                                                  UINT16_MAX, UINT16_MAX};
+    } raw_command;
 };
