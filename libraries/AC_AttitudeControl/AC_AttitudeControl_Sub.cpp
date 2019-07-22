@@ -203,7 +203,7 @@ void AC_AttitudeControl_Sub::set_throttle_out(float throttle_in, bool apply_angl
 {
     _throttle_in = throttle_in;
     update_althold_lean_angle_max(throttle_in);
-    _motors.set_throttle_filter_cutoff(filter_cutoff);
+//    _motors.set_throttle_filter_cutoff(filter_cutoff);
     if (apply_angle_boost) {
         // Apply angle boost
         throttle_in = get_throttle_boosted(throttle_in);
@@ -211,8 +211,8 @@ void AC_AttitudeControl_Sub::set_throttle_out(float throttle_in, bool apply_angl
         // Clear angle_boost for logging purposes
         _angle_boost = 0.0f;
     }
-    _motors.set_throttle(throttle_in);
-    _motors.set_throttle_avg_max(get_throttle_avg_max(MAX(throttle_in, _throttle_in)));
+//    _motors.set_throttle(throttle_in);
+//    _motors.set_throttle_avg_max(get_throttle_avg_max(MAX(throttle_in, _throttle_in)));
 }
 
 // returns a throttle including compensation for roll/pitch angle
@@ -262,10 +262,10 @@ void AC_AttitudeControl_Sub::rate_controller_run()
     // move throttle vs attitude mixing towards desired (called from here because this is conveniently called on every iteration)
     update_throttle_rpy_mix();
 
-    Vector3f gyro_latest = _ahrs.get_gyro_latest();
-    _motors.set_roll(rate_target_to_motor_roll(gyro_latest.x, _rate_target_ang_vel.x));
-    _motors.set_pitch(rate_target_to_motor_pitch(gyro_latest.y, _rate_target_ang_vel.y));
-    _motors.set_yaw(rate_target_to_motor_yaw(gyro_latest.z, _rate_target_ang_vel.z));
+//    Vector3f gyro_latest = _ahrs.get_gyro_latest();
+//    _motors.set_roll(rate_target_to_motor_roll(gyro_latest.x, _rate_target_ang_vel.x));
+//    _motors.set_pitch(rate_target_to_motor_pitch(gyro_latest.y, _rate_target_ang_vel.y));
+//    _motors.set_yaw(rate_target_to_motor_yaw(gyro_latest.z, _rate_target_ang_vel.z));
 
     control_monitor_update();
 }
