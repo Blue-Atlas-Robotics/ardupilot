@@ -56,12 +56,14 @@ void Sub::raw_run() {
         return;
     }
 
+    uint32_t tnow = AP_HAL::millis();
+
     motors.set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
 
     // If there is a dedicated message and values for pwm are set - move!
     for (int i=0; i<6; i++) {
-        if (motors_raw_pwm[i] != UINT16_MAX) {
-            motors.output_raw(i, motors_raw_pwm[i]);
+        if ((motors_raw_sp.pwm[i] != UINT16_MAX) && (tnow - motors_raw_sp.last_message_ms < 1*1000)) {
+            motors.output_raw(i, motors_raw_sp.pwm[i]);
         } else {
             motors.output_raw(i, 1500U);
         }

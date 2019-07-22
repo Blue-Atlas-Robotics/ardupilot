@@ -301,7 +301,11 @@ private:
     AP_Motors6DOF motors;
 
     // raw pwm values for direct motor control
-    uint16_t motors_raw_pwm[6] = {UINT16_MAX, UINT16_MAX, UINT16_MAX, UINT16_MAX, UINT16_MAX, UINT16_MAX};
+    struct {
+      uint32_t last_message_ms = 0;
+      uint16_t pwm[6] = {UINT16_MAX, UINT16_MAX, UINT16_MAX,
+                                    UINT16_MAX, UINT16_MAX, UINT16_MAX};
+    } motors_raw_sp;
 
     // GPS variables
     // Sometimes we need to remove the scaling for distance calcs
