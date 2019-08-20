@@ -115,6 +115,28 @@ void GCS_MAVLINK_Sub::send_scaled_pressure3()
         sub.celsius.temperature() * 100);
 }
 
+
+void GCS_MAVLINK_Sub::send_attitude_quaternion()
+{
+    const AP_AHRS &ahrs = AP::ahrs();
+    const Vector3f omega = ahrs.get_gyro();
+
+    Quaternion q;
+    q.from_rotation_matrix(ahrs.get_rotation_body_to_ned());
+
+    mavlink_msg_attitude_quaternion_send(
+        chan,
+        AP_HAL::millis(),
+        q.q1,
+        q.q2,
+        q.q3,
+        q.q4,
+        omega.x,
+        omega.y,
+        omega.z);
+}
+
+
 bool GCS_MAVLINK_Sub::send_info()
 {
     // Just do this all at once, hopefully the hard-wire telemetry requirement means this is ok
@@ -236,6 +258,10 @@ bool GCS_MAVLINK_Sub::try_send_message(enum ap_message id)
 
     case MSG_NAMED_FLOAT:
         send_info();
+        break;
+
+    case MSG_ATTITUDE_QUATERNION:
+        send_attitude_quaternion();
         break;
 
     case MSG_TERRAIN:
@@ -360,6 +386,7 @@ static const ap_message STREAM_RC_CHANNELS_msgs[] = {
 };
 static const ap_message STREAM_EXTRA1_msgs[] = {
     MSG_ATTITUDE,
+    MSG_ATTITUDE_QUATERNION,
     MSG_SIMSTATE,
     MSG_AHRS2,
     MSG_AHRS3,
