@@ -564,21 +564,6 @@ MAV_RESULT GCS_MAVLINK_Sub::handle_command_long_packet(const mavlink_command_lon
         }
         return MAV_RESULT_ACCEPTED;
 
-    case MAV_CMD_DO_LAST:
-        if (sub.control_mode == RAW) {
-
-            sub.motors.set_raw_command(AP_MOTORS_MOT_1, (uint16_t)packet.param2, AP_HAL::millis());
-            sub.motors.set_raw_command(AP_MOTORS_MOT_2, (uint16_t)packet.param3, AP_HAL::millis());
-            sub.motors.set_raw_command(AP_MOTORS_MOT_3, (uint16_t)packet.param4, AP_HAL::millis());
-            sub.motors.set_raw_command(AP_MOTORS_MOT_4, (uint16_t)packet.param5, AP_HAL::millis());
-            sub.motors.set_raw_command(AP_MOTORS_MOT_5, (uint16_t)packet.param6, AP_HAL::millis());
-            sub.motors.set_raw_command(AP_MOTORS_MOT_6, (uint16_t)packet.param7, AP_HAL::millis());
-
-            return MAV_RESULT_ACCEPTED;
-        } else {
-            return MAV_RESULT_FAILED;
-        }
-
 
     default:
         return GCS_MAVLINK::handle_command_long_packet(packet);
@@ -824,6 +809,25 @@ void GCS_MAVLINK_Sub::handleMessage(mavlink_message_t* msg)
             sub.leak_detector.set_detect();
         }
     }
+        break;
+
+    case MAVLINK_MSG_ID_RC_CHANNELS_RAW:
+        mavlink_rc_channels_raw_t packet;
+        mavlink_msg_rc_channels_raw_decode(msg, &packet);
+
+        sub.failsafe.last_pilot_input_ms = AP_HAL::millis();
+
+        if (sub.control_mode == RAW) {
+            sub.motors.set_raw_command(AP_MOTORS_MOT_1, packet.chan1_raw, sub.failsafe.last_pilot_input_ms);
+            sub.motors.set_raw_command(AP_MOTORS_MOT_2, packet.chan2_raw, sub.failsafe.last_pilot_input_ms);
+            sub.motors.set_raw_command(AP_MOTORS_MOT_3, packet.chan3_raw, sub.failsafe.last_pilot_input_ms);
+            sub.motors.set_raw_command(AP_MOTORS_MOT_4, packet.chan4_raw, sub.failsafe.last_pilot_input_ms);
+            sub.motors.set_raw_command(AP_MOTORS_MOT_5, packet.chan5_raw, sub.failsafe.last_pilot_input_ms);
+            sub.motors.set_raw_command(AP_MOTORS_MOT_6, packet.chan6_raw, sub.failsafe.last_pilot_input_ms);
+            sub.motors.set_raw_command(AP_MOTORS_MOT_7, packet.chan7_raw, sub.failsafe.last_pilot_input_ms);
+            sub.motors.set_raw_command(AP_MOTORS_MOT_8, packet.chan8_raw, sub.failsafe.last_pilot_input_ms);
+        }
+
         break;
 
     default:
