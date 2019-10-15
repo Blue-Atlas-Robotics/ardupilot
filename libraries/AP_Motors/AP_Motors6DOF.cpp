@@ -555,3 +555,8 @@ void AP_Motors6DOF::set_raw_command(uint8_t chan, uint16_t pwm, uint32_t timesta
     raw_command.pwm[chan] = pwm;
     raw_command.last_message_ms = timestamp;
 }
+
+uint16_t AP_Motors6DOF::get_raw_command(uint8_t chan)
+{
+    return raw_command.pwm[chan];
+}

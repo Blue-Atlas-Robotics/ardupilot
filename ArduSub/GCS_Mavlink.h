@@ -47,6 +47,7 @@ private:
     bool try_send_message(enum ap_message id) override;
 
     void send_attitude_quaternion(void);
+    void send_pwms(void);
     bool send_info(void);
 
     MAV_MODE base_mode() const override;

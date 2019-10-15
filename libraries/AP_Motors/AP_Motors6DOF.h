@@ -42,6 +42,7 @@ public:
     void output_to_motors() override;
 
     void set_raw_command(uint8_t chan, uint16_t pwm, uint32_t timestamp);
+    uint16_t get_raw_command(uint8_t chan);
 
     // var_info for holding Parameter information
     static const struct AP_Param::GroupInfo        var_info[];

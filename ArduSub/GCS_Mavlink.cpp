@@ -137,6 +137,30 @@ void GCS_MAVLINK_Sub::send_attitude_quaternion()
 }
 
 
+void GCS_MAVLINK_Sub::send_pwms()
+{
+  mavlink_channel_t chan = MAVLINK_COMM_0;
+  uint32_t time_boot_ms = AP_HAL::millis();
+  uint8_t port = 0;
+  uint8_t rssi = 0;
+
+  mavlink_msg_rc_channels_scaled_send(
+      chan,
+      time_boot_ms,
+      port,
+      sub.motors.get_raw_command(AP_MOTORS_MOT_1),
+      sub.motors.get_raw_command(AP_MOTORS_MOT_2),
+      sub.motors.get_raw_command(AP_MOTORS_MOT_3),
+      sub.motors.get_raw_command(AP_MOTORS_MOT_4),
+      sub.motors.get_raw_command(AP_MOTORS_MOT_5),
+      sub.motors.get_raw_command(AP_MOTORS_MOT_6),
+      sub.motors.get_raw_command(AP_MOTORS_MOT_7),
+      sub.motors.get_raw_command(AP_MOTORS_MOT_8),
+      rssi
+  );
+}
+
+
 bool GCS_MAVLINK_Sub::send_info()
 {
     // Just do this all at once, hopefully the hard-wire telemetry requirement means this is ok
@@ -264,6 +288,10 @@ bool GCS_MAVLINK_Sub::try_send_message(enum ap_message id)
         send_attitude_quaternion();
         break;
 
+    case MSG_RC_CHANNELS_SCALED:
+        send_pwms();
+        break;
+
     case MSG_TERRAIN:
 #if AP_TERRAIN_AVAILABLE && AC_TERRAIN
         CHECK_PAYLOAD_SIZE(TERRAIN_REQUEST);
@@ -387,6 +415,7 @@ static const ap_message STREAM_RC_CHANNELS_msgs[] = {
 static const ap_message STREAM_EXTRA1_msgs[] = {
     MSG_ATTITUDE,
     MSG_ATTITUDE_QUATERNION,
+    MSG_RC_CHANNELS_SCALED,
     MSG_SIMSTATE,
 //    MSG_AHRS2,
 //    MSG_AHRS3,
