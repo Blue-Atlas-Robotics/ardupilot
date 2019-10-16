@@ -48,6 +48,7 @@ private:
 
     void send_attitude_quaternion(void);
     void send_pwms(void);
+    void send_control_system_state(void);
     bool send_info(void);
 
     MAV_MODE base_mode() const override;

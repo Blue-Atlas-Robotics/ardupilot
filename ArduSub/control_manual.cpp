@@ -9,10 +9,7 @@ bool Sub::manual_init() {
     // set to neutral to prevent chaotic behavior (esp. roll/pitch)
     set_neutral_controls();
 
-    // Set raw command to impossible to prevent it's usage in AP_Motors6DOF::output_to_motors
-    for (int i=0; i<AP_MOTORS_MAX_NUM_MOTORS; i++) {
-        sub.motors.set_raw_command(i, UINT16_MAX, AP_HAL::millis());
-    }
+    sub.motors.disable_raw();
 
     return true;
 }
@@ -48,6 +45,9 @@ bool Sub::raw_init() {
     set_neutral_controls();
 
     // Set raw command neutral
+
+    sub.motors.enable_raw();
+
     for (int i=0; i<AP_MOTORS_MAX_NUM_MOTORS; i++) {
         sub.motors.set_raw_command(i, 1500U, AP_HAL::millis());
     }

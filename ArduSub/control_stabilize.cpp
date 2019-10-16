@@ -7,6 +7,8 @@ bool Sub::stabilize_init()
     pos_control.set_alt_target(0);
     last_pilot_heading = ahrs.yaw_sensor;
 
+    sub.motors.disable_raw();
+
     return true;
 }
 

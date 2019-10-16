@@ -254,10 +254,15 @@ void AP_Motors6DOF::output_to_motors()
         // set motor output based on thrust requests
         for (i=0; i<AP_MOTORS_MAX_NUM_MOTORS; i++) {
             if (motor_enabled[i]) {
-                if (raw_command.pwm[i] == UINT16_MAX) {
-                    motor_out[i] = calc_thrust_to_pwm(_thrust_rpyt_out[i]);
-                } else {
+                if (is_raw()) {
                     motor_out[i] = raw_command.pwm[i];
+                } else {
+                    motor_out[i] = calc_thrust_to_pwm(_thrust_rpyt_out[i]);
+                    if (motor_out[i] > 999U) {
+                        raw_command.pwm[i] = motor_out[i];
+                    } else {
+                      raw_command.pwm[i] = 1500U;
+                    }
                 }
             }
         }

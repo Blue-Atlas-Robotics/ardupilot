@@ -161,6 +161,49 @@ void GCS_MAVLINK_Sub::send_pwms()
 }
 
 
+void GCS_MAVLINK_Sub::send_control_system_state()
+{
+    const AP_AHRS &ahrs = AP::ahrs();
+    const Vector3f acc_ef = ahrs.get_accel_ef();
+
+    Quaternion q_btn;
+    Quaternion q_acc;
+
+    q_btn.from_rotation_matrix(ahrs.get_rotation_body_to_ned());
+
+    q_acc.q1 = 0.0f;
+    q_acc.q2 = acc_ef.x;
+    q_acc.q3 = acc_ef.y;
+    q_acc.q4 = acc_ef.z + GRAVITY_MSS;
+
+    q_acc = q_btn.inverse() * q_acc * q_btn;
+
+    mavlink_channel_t chan = MAVLINK_COMM_0;
+    mavlink_control_system_state_t control_system_state = {};
+
+    control_system_state.time_usec = AP_HAL::micros64(); /*< [us] Timestamp (UNIX Epoch time or time since system boot). The receiving end can infer timestamp format (since 1.1.1970 or since system boot) by checking for the magnitude the number.*/
+    control_system_state.x_acc = acc_ef.x; /*< [m/s/s] X acceleration in earth frame*/
+    control_system_state.y_acc = acc_ef.y; /*< [m/s/s] Y acceleration in earth frame*/
+    control_system_state.z_acc = acc_ef.z; /*< [m/s/s] Z acceleration in earth frame*/
+    control_system_state.x_vel = q_acc.q2; /*< [m/s/s] X acceleration in body frame*/
+    control_system_state.y_vel = q_acc.q3; /*< [m/s/s] Y acceleration in body frame*/
+    control_system_state.z_vel = q_acc.q4; /*< [m/s/s] Z acceleration in body frame*/
+  //  TODO, find another message or build our own.
+  //  control_system_state.x_pos = 0.0f; /*< [m] X position in local frame*/
+  //  control_system_state.y_pos = 0.0f; /*< [m] Y position in local frame*/
+  //  control_system_state.z_pos = 0.0f; /*< [m] Z position in local frame*/
+  //  control_system_state.airspeed = 0.0f; /*< [m/s] Airspeed, set to -1 if unknown*/
+  //  control_system_state.vel_variance[3] = {0.0f}; /*<  Variance of body velocity estimate*/
+  //  control_system_state.pos_variance[3] = {0.0f}; /*<  Variance in local position*/
+  //  control_system_state.q[4]; /*<  The attitude, represented as Quaternion*/
+  //  control_system_state.roll_rate; /*< [rad/s] Angular rate in roll axis*/
+  //  control_system_state.pitch_rate; /*< [rad/s] Angular rate in pitch axis*/
+  //  control_system_state.yaw_rate; /*< [rad/s] Angular rate in yaw axis*/
+
+    mavlink_msg_control_system_state_send_struct(chan, &control_system_state);
+}
+
+
 bool GCS_MAVLINK_Sub::send_info()
 {
     // Just do this all at once, hopefully the hard-wire telemetry requirement means this is ok
@@ -286,6 +329,10 @@ bool GCS_MAVLINK_Sub::try_send_message(enum ap_message id)
 
     case MSG_ATTITUDE_QUATERNION:
         send_attitude_quaternion();
+        break;
+
+    case MSG_CONTROL_SYSTEM_STATE:
+        send_control_system_state();
         break;
 
     case MSG_RC_CHANNELS_SCALED:
@@ -415,6 +462,7 @@ static const ap_message STREAM_RC_CHANNELS_msgs[] = {
 static const ap_message STREAM_EXTRA1_msgs[] = {
     MSG_ATTITUDE,
     MSG_ATTITUDE_QUATERNION,
+    MSG_CONTROL_SYSTEM_STATE,
     MSG_RC_CHANNELS_SCALED,
     MSG_SIMSTATE,
 //    MSG_AHRS2,

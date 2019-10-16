@@ -42,6 +42,9 @@ public:
     void output_to_motors() override;
 
     void set_raw_command(uint8_t chan, uint16_t pwm, uint32_t timestamp);
+    void enable_raw() { raw_command.is_raw = true; };
+    void disable_raw() { raw_command.is_raw = false; };
+    bool is_raw() { return raw_command.is_raw; };
     uint16_t get_raw_command(uint8_t chan);
 
     // var_info for holding Parameter information
@@ -72,12 +75,13 @@ protected:
 
     // raw pwm values for direct motor control
     struct {
+        bool is_raw = false;
         uint32_t last_message_ms = 0;
-        uint16_t pwm[AP_MOTORS_MAX_NUM_MOTORS] = {UINT16_MAX, UINT16_MAX,
-                                                  UINT16_MAX, UINT16_MAX,
-                                                  UINT16_MAX, UINT16_MAX,
-                                                  UINT16_MAX, UINT16_MAX,
-                                                  UINT16_MAX, UINT16_MAX,
-                                                  UINT16_MAX, UINT16_MAX};
+        uint16_t pwm[AP_MOTORS_MAX_NUM_MOTORS] = {1500U, 1500U,
+                                                  1500U, 1500U,
+                                                  1500U, 1500U,
+                                                  1500U, 1500U,
+                                                  1500U, 1500U,
+                                                  1500U, 1500U};
     } raw_command;
 };
