@@ -21,6 +21,7 @@
 #include "AP_Motors.h"
 #include <AP_BattMonitor/AP_BattMonitor.h>
 #include <AP_HAL/AP_HAL.h>
+#include <GCS_MAVLink/GCS.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -173,8 +174,18 @@ void AP_Motors6DOF::setup_motors(motor_frame_class frame_class, motor_frame_type
         break;
 
     case SUB_FRAME_CUSTOM:
-        // Put your custom motor setup here
-        //break;
+        // Those motors are just to add them to the list, numbers are useless.
+        // The actual inverse thrusters mapping lives is AP_Motors6DOF::output_armed_stabilizing_custom() function
+        // Motor #                              Roll(rx)        Pitch(ry)       Yaw(rz)         Throttle(fz)    Forward(fx)         Lateral(fy)         Testing Order
+        add_motor_raw_6dof(AP_MOTORS_MOT_1,     +0.637f,        +0.730f,        -0.248f,        -0.178f,        -0.710f,            +0.681f,            1);
+        add_motor_raw_6dof(AP_MOTORS_MOT_2,     +0.661f,        -0.732f,        +0.162f,        -0.178f,        +0.710f,            +0.681f,            2);
+        add_motor_raw_6dof(AP_MOTORS_MOT_3,     -0.661f,        +0.732f,        +0.162f,        -0.178f,        -0.710f,            -0.681f,            3);
+        add_motor_raw_6dof(AP_MOTORS_MOT_4,     -0.637f,        -0.730f,        -0.248f,        -0.178f,        +0.710f,            -0.681f,            4);
+        add_motor_raw_6dof(AP_MOTORS_MOT_5,     -0.637f,        -0.730f,        -0.248f,        +0.178f,        -0.710f,            +0.681f,            5);
+        add_motor_raw_6dof(AP_MOTORS_MOT_6,     -0.661f,        +0.732f,        +0.162f,        +0.178f,        +0.710f,            +0.681f,            6);
+        add_motor_raw_6dof(AP_MOTORS_MOT_7,     +0.661f,        -0.732f,        +0.162f,        +0.178f,        -0.710f,            -0.681f,            7);
+        add_motor_raw_6dof(AP_MOTORS_MOT_8,     +0.637f,        +0.730f,        -0.248f,        +0.178f,        +0.710f,            -0.681f,            8);
+        break;
 
     case SUB_FRAME_SIMPLEROV_3:
     case SUB_FRAME_SIMPLEROV_4:
@@ -222,7 +233,25 @@ void AP_Motors6DOF::output_min()
 
 int16_t AP_Motors6DOF::calc_thrust_to_pwm(float thrust_in) const
 {
-    return constrain_int16(1500 + thrust_in * 400, _throttle_radio_min, _throttle_radio_max);
+
+  int16_t pwm = 0U;
+  int16_t mid_pwm = 1500U;
+  float thrust_max_Nm = 10.0f;
+
+  float x = fabsf(thrust_in * thrust_max_Nm);
+
+  if (0.0 <= x && x <= 0.01) {  // motor dead zone
+    return mid_pwm;
+  }
+
+  if (thrust_in > 0.0) {
+    pwm = static_cast<int16_t>(safe_sqrt(x*x*19.328913748011416 + x*946.8280079018037 + -1.1617525031661196));
+  } else {
+    pwm = -1 * static_cast<int16_t>(safe_sqrt(x*x*20.56590334031135 + x*1262.4149340710521 + 110.90447379277136));
+  }
+
+  return constrain_int16(pwm + mid_pwm, _throttle_radio_min /*1100*/, _throttle_radio_max /*1900*/);
+//  return constrain_int16(1500 + thrust_in * 400, _throttle_radio_min, _throttle_radio_max);
 }
 
 void AP_Motors6DOF::output_to_motors()
@@ -268,11 +297,21 @@ void AP_Motors6DOF::output_to_motors()
         }
         break;
     }
+//
+//    if (m_debug_counter > 10) {
+//      gcs().send_text(MAV_SEVERITY_DEBUG, "%u|%u|%u|%u|%u|%u|%u|%u",
+//                      motor_out[0], motor_out[1], motor_out[2], motor_out[3],
+//                      motor_out[4], motor_out[5], motor_out[6], motor_out[7]);
+//      m_debug_counter = 0;
+//    } else {
+//      m_debug_counter += 1;
+//    }
 
     // send output to each motor
     for (i=0; i<AP_MOTORS_MAX_NUM_MOTORS; i++) {
         if (motor_enabled[i]) {
             rc_write(i, motor_out[i]);
+//            rc_write(i, 1500U);
         }
     }
 }
@@ -292,6 +331,8 @@ void AP_Motors6DOF::output_armed_stabilizing()
         output_armed_stabilizing_vectored();
     } else if ((sub_frame_t)_last_frame_class == SUB_FRAME_VECTORED_6DOF) {
         output_armed_stabilizing_vectored_6dof();
+    } else if ((sub_frame_t)_last_frame_class == SUB_FRAME_CUSTOM) {
+        output_armed_stabilizing_custom();
     } else {
         uint8_t i;                          // general purpose counter
         float   roll_thrust;                // roll thrust input value, +/- 1.0
@@ -391,6 +432,82 @@ void AP_Motors6DOF::output_armed_stabilizing()
             _thrust_rpyt_out[i] *= _output_limited;
         }
     }
+}
+
+void AP_Motors6DOF::output_armed_stabilizing_custom() {
+
+  uint8_t i;                          // general purpose counter
+  float   roll_thrust;                // roll thrust input value, +/- 1.0
+  float   pitch_thrust;               // pitch thrust input value, +/- 1.0
+  float   yaw_thrust;                 // yaw thrust input value, +/- 1.0
+  float   throttle_thrust;            // throttle thrust input value, +/- 1.0
+  float   forward_thrust;             // forward thrust input value, +/- 1.0
+  float   lateral_thrust;             // lateral thrust input value, +/- 1.0
+
+  const uint8_t conf_rows = AP_MOTORS_MAX_NUM_MOTORS;
+  const uint8_t conf_cols = 6;
+
+  float conf_inv[conf_rows][conf_cols] = {{-0.88536058, -0.79975776,  2.31465619,  0.17598475, -0.18355167, -0.7018588 },
+                                          {-0.57627255,  0.50341193, -2.31465619, -0.17598475, -0.18355167, -0.7018588 },
+                                          { 0.57627255, -0.50341193, -2.31465619,  0.17598475,  0.18355167, -0.7018588 },
+                                          { 0.88536058,  0.79975776,  2.31465619, -0.17598475,  0.18355167, -0.7018588 },
+                                          { 0.88536058,  0.79975776,  2.31465619,  0.17598475, -0.18355167,  0.7018588 },
+                                          { 0.57627255, -0.50341193, -2.31465619, -0.17598475, -0.18355167,  0.7018588 },
+                                          {-0.57627255,  0.50341193, -2.31465619,  0.17598475,  0.18355167,  0.7018588 },
+                                          {-0.88536058, -0.79975776,  2.31465619, -0.17598475,  0.18355167,  0.7018588 }};
+
+// TODO, OLSLO, gains for all axes to balance manual and possibly alt hold mode.
+  roll_thrust = _roll_in;
+  pitch_thrust = _pitch_in;
+  yaw_thrust = _yaw_in * 0.3;
+  throttle_thrust = 0.5 * -1.0f * get_throttle_bidirectional();  // Mult by -1 to have z axis pointing down.
+  forward_thrust = _forward_in;
+  lateral_thrust = _lateral_in;
+
+  // Joystick mode 3 , manual mode
+//  roll_thrust = 0 Ok
+//  pitch_thrust = 0 Ok
+//  yaw_thrust right stick right+ left- Ok
+//  forward_thrust left stick up+ down- Ok
+//  lateral_thrust left stick right+ left- Ok
+//  throttle_thrust right stick up+ down- NOT Ok, was reverted above.
+
+
+  float desired_wrench[conf_cols] = {roll_thrust, pitch_thrust, yaw_thrust, forward_thrust, lateral_thrust, throttle_thrust};
+  float thrusters_forces[conf_rows] = {0.0f};
+
+  for (int row = 0; row < conf_rows; row++) {
+    for (int col = 0; col < conf_cols; col++) {
+      thrusters_forces[row] += conf_inv[row][col] * desired_wrench[col];
+    }
+  }
+
+  // initialize limits flags
+  limit.roll_pitch = false;
+  limit.yaw = false;
+  limit.throttle_lower = false;
+  limit.throttle_upper = false;
+  limit.throttle_upper = false;
+  limit.throttle_lower = false;
+
+//  if (m_debug_counter > 100) {
+//    gcs().send_text(MAV_SEVERITY_DEBUG, "%.2f|%.2f|%.2f|%.2f|%.2f|%.2f",
+//                    roll_thrust, pitch_thrust, yaw_thrust, forward_thrust, lateral_thrust, throttle_thrust);
+//    gcs().send_text(MAV_SEVERITY_DEBUG, "%+.2f|%+.2f|%+.2f|%+.2f|%+.2f|%+.2f|%+.2f|%+.2f",
+//                    thrusters_forces[0], thrusters_forces[1], thrusters_forces[2], thrusters_forces[3],
+//                    thrusters_forces[4], thrusters_forces[5], thrusters_forces[6], thrusters_forces[7]);
+//    m_debug_counter = 0;
+//  } else {
+//    m_debug_counter += 1;
+//  }
+
+  for (i=0; i<AP_MOTORS_MAX_NUM_MOTORS; i++) {
+    if (motor_enabled[i]) {
+      _thrust_rpyt_out[i] = constrain_float(static_cast<float>(_motor_reverse[i])*(thrusters_forces[i]),-1.0f,1.0f);  // TODO, OLSLO, do we need constraint here?
+//      _thrust_rpyt_out[i] = 0.0f;
+    }
+  }
+
 }
 
 // output_armed - sends commands to the motors
