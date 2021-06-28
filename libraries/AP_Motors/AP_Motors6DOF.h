@@ -87,4 +87,5 @@ protected:
     } raw_command;
 
     int m_debug_counter = 0;
+//    AP_Float _wrench_gains[6];
 };

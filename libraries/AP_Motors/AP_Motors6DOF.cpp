@@ -120,6 +120,13 @@ const AP_Param::GroupInfo AP_Motors6DOF::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("12_DIRECTION", 13, AP_Motors6DOF, _motor_reverse[11], 1),
 
+//    // @Param: WRENCH_GAIN_0
+//    // @DisplayName: Wrench gain 0
+//    // @Description: Used to tune manual control
+//    // @Values: 1:normal,-1:reverse
+//    // @User: Standard
+//    AP_GROUPINFO("WRENCH_GAIN_0", 14, AP_Motors6DOF, _wrench_gains[0], 0.0),
+
     AP_GROUPEND
 };
 
@@ -236,7 +243,7 @@ int16_t AP_Motors6DOF::calc_thrust_to_pwm(float thrust_in) const
 
   int16_t pwm = 0U;
   int16_t mid_pwm = 1500U;
-  float thrust_max_Nm = 10.0f;
+  float thrust_max_Nm = 20.0f;
 
   float x = fabsf(thrust_in * thrust_max_Nm);
 
@@ -457,12 +464,12 @@ void AP_Motors6DOF::output_armed_stabilizing_custom() {
                                           {-0.88536058, -0.79975776,  2.31465619, -0.17598475,  0.18355167,  0.7018588 }};
 
 // TODO, OLSLO, gains for all axes to balance manual and possibly alt hold mode.
-  roll_thrust = _roll_in;
-  pitch_thrust = _pitch_in;
+  roll_thrust = _roll_in * 4.0f;
+  pitch_thrust = _pitch_in * 4.0f;
   yaw_thrust = _yaw_in * 0.3;
-  throttle_thrust = 0.5 * -1.0f * get_throttle_bidirectional();  // Mult by -1 to have z axis pointing down.
-  forward_thrust = _forward_in;
-  lateral_thrust = _lateral_in;
+  throttle_thrust = -1.0f * get_throttle_bidirectional();  // Mult by -1 to have z axis pointing down.
+  forward_thrust = _forward_in * 10.0f;
+  lateral_thrust = _lateral_in * 10.0f;
 
   // Joystick mode 3 , manual mode
 //  roll_thrust = 0 Ok
