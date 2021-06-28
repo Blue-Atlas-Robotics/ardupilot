@@ -67,6 +67,7 @@ protected:
     AP_Float            _forwardVerticalCouplingFactor;
 
     AP_Float _wrench_gains[6];
+    AP_Float _maximum_thrust;
 
     float               _throttle_factor[AP_MOTORS_MAX_NUM_MOTORS]; // each motors contribution to throttle (climb/descent)
     float               _forward_factor[AP_MOTORS_MAX_NUM_MOTORS]; // each motors contribution to forward/backward

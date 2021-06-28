@@ -126,7 +126,7 @@ const AP_Param::GroupInfo AP_Motors6DOF::var_info[] = {
     // @Range: -100.0 100.0
     // @Increment: 0.01
     // @User: Standard
-    AP_GROUPINFO("WR_GAIN_0", 14, AP_Motors6DOF, _wrench_gains[0], 4.0f),
+    AP_GROUPINFO("WR_GAIN_0", 14, AP_Motors6DOF, _wrench_gains[0], 1.13f),
 
     // @Param: WR_GAIN_1
     // @DisplayName: Wrench gain
@@ -134,7 +134,7 @@ const AP_Param::GroupInfo AP_Motors6DOF::var_info[] = {
     // @Range: -100.0 100.0
     // @Increment: 0.01
     // @User: Standard
-    AP_GROUPINFO("WR_GAIN_1", 16, AP_Motors6DOF, _wrench_gains[1], 4.0f),
+    AP_GROUPINFO("WR_GAIN_1", 16, AP_Motors6DOF, _wrench_gains[1], 1.251f),
 
     // @Param: WR_GAIN_2
     // @DisplayName: Wrench gain
@@ -142,7 +142,7 @@ const AP_Param::GroupInfo AP_Motors6DOF::var_info[] = {
     // @Range: -100.0 100.0
     // @Increment: 0.01
     // @User: Standard
-    AP_GROUPINFO("WR_GAIN_2", 17, AP_Motors6DOF, _wrench_gains[2], 0.3f),
+    AP_GROUPINFO("WR_GAIN_2", 17, AP_Motors6DOF, _wrench_gains[2], 0.433f),
 
     // @Param: WR_GAIN_3
     // @DisplayName: Wrench gain
@@ -150,7 +150,7 @@ const AP_Param::GroupInfo AP_Motors6DOF::var_info[] = {
     // @Range: -100.0 100.0
     // @Increment: 0.01
     // @User: Standard
-    AP_GROUPINFO("WR_GAIN_3", 18, AP_Motors6DOF, _wrench_gains[3], 10.0f),
+    AP_GROUPINFO("WR_GAIN_3", 18, AP_Motors6DOF, _wrench_gains[3], 5.683),
 
     // @Param: WR_GAIN_4
     // @DisplayName: Wrench gain
@@ -158,7 +158,7 @@ const AP_Param::GroupInfo AP_Motors6DOF::var_info[] = {
     // @Range: -100.0 100.0
     // @Increment: 0.01
     // @User: Standard
-    AP_GROUPINFO("WR_GAIN_4", 19, AP_Motors6DOF, _wrench_gains[4], 10.0f),
+    AP_GROUPINFO("WR_GAIN_4", 19, AP_Motors6DOF, _wrench_gains[4], 5.449f),
 
     // @Param: WR_GAIN_5
     // @DisplayName: Wrench gain
@@ -166,7 +166,15 @@ const AP_Param::GroupInfo AP_Motors6DOF::var_info[] = {
     // @Range: -100.0 100.0
     // @Increment: 0.01
     // @User: Standard
-    AP_GROUPINFO("WR_GAIN_5", 20, AP_Motors6DOF, _wrench_gains[5], -1.0f),
+    AP_GROUPINFO("WR_GAIN_5", 20, AP_Motors6DOF, _wrench_gains[5], 1.425f),
+
+    // @Param: MAX_THR
+    // @DisplayName: Max thrust
+    // @Description: Maximum thrust of thruster in N
+    // @Range: 1.0 60.0
+    // @Increment: 0.01
+    // @User: Standard
+    AP_GROUPINFO("MAX_THR", 21, AP_Motors6DOF, _maximum_thrust, 60.0f),
 
     AP_GROUPEND
 };
@@ -284,9 +292,8 @@ int16_t AP_Motors6DOF::calc_thrust_to_pwm(float thrust_in) const
 
   int16_t pwm = 0U;
   int16_t mid_pwm = 1500U;
-  float thrust_max_Nm = 20.0f;
 
-  float x = fabsf(thrust_in * thrust_max_Nm);
+  float x = fabsf(thrust_in * _maximum_thrust);
 
   if (0.0 <= x && x <= 0.01) {  // motor dead zone
     return mid_pwm;
@@ -495,6 +502,10 @@ void AP_Motors6DOF::output_armed_stabilizing_custom() {
   const uint8_t conf_rows = AP_MOTORS_MAX_NUM_MOTORS;
   const uint8_t conf_cols = 6;
 
+  float thrusters_forces[conf_rows] = {0.0f};
+  float thrusters_forces_abs_max = 0.0f;
+  float thrusters_forces_scaler = 1.0f;
+
   float conf_inv[conf_rows][conf_cols] = {{-0.88536058, -0.79975776,  2.31465619,  0.17598475, -0.18355167, -0.7018588 },
                                           {-0.57627255,  0.50341193, -2.31465619, -0.17598475, -0.18355167, -0.7018588 },
                                           { 0.57627255, -0.50341193, -2.31465619,  0.17598475,  0.18355167, -0.7018588 },
@@ -504,13 +515,12 @@ void AP_Motors6DOF::output_armed_stabilizing_custom() {
                                           {-0.57627255,  0.50341193, -2.31465619,  0.17598475,  0.18355167,  0.7018588 },
                                           {-0.88536058, -0.79975776,  2.31465619, -0.17598475,  0.18355167,  0.7018588 }};
 
-// TODO, OLSLO, gains for all axes to balance manual and possibly alt hold mode.
   roll_thrust = _roll_in * _wrench_gains[0];
   pitch_thrust = _pitch_in * _wrench_gains[1];
   yaw_thrust = _yaw_in * _wrench_gains[2];
   forward_thrust = _forward_in * _wrench_gains[3];
   lateral_thrust = _lateral_in * _wrench_gains[4];
-  throttle_thrust = _wrench_gains[5] * get_throttle_bidirectional();
+  throttle_thrust = -1.0f * _wrench_gains[5] * get_throttle_bidirectional();
 
   // Joystick mode 3 , manual mode
 //  roll_thrust = 0 Ok
@@ -520,9 +530,7 @@ void AP_Motors6DOF::output_armed_stabilizing_custom() {
 //  lateral_thrust left stick right+ left- Ok
 //  throttle_thrust right stick up+ down- NOT Ok, was reverted above.
 
-
   float desired_wrench[conf_cols] = {roll_thrust, pitch_thrust, yaw_thrust, forward_thrust, lateral_thrust, throttle_thrust};
-  float thrusters_forces[conf_rows] = {0.0f};
 
   for (int row = 0; row < conf_rows; row++) {
     for (int col = 0; col < conf_cols; col++) {
@@ -550,8 +558,19 @@ void AP_Motors6DOF::output_armed_stabilizing_custom() {
 //  }
 
   for (i=0; i<AP_MOTORS_MAX_NUM_MOTORS; i++) {
+    float abs_force = fabsf(thrusters_forces[i]);
+    if (abs_force > thrusters_forces_abs_max) {
+      thrusters_forces_abs_max = abs_force;
+    }
+  }
+
+  if (thrusters_forces_abs_max > 1.0f) {
+    thrusters_forces_scaler = 1.0f/thrusters_forces_abs_max;
+  }
+
+  for (i=0; i<AP_MOTORS_MAX_NUM_MOTORS; i++) {
     if (motor_enabled[i]) {
-      _thrust_rpyt_out[i] = constrain_float(static_cast<float>(_motor_reverse[i])*(thrusters_forces[i]),-1.0f,1.0f);  // TODO, OLSLO, do we need constraint here?
+      _thrust_rpyt_out[i] = constrain_float(static_cast<float>(_motor_reverse[i])*thrusters_forces[i]*thrusters_forces_scaler, -1.0f, 1.0f);  // TODO, OLSLO, do we need constraint here?
 //      _thrust_rpyt_out[i] = 0.0f;
     }
   }
