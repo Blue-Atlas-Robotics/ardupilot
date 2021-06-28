@@ -66,6 +66,8 @@ protected:
     AP_Int8             _motor_reverse[AP_MOTORS_MAX_NUM_MOTORS];
     AP_Float            _forwardVerticalCouplingFactor;
 
+    AP_Float _wrench_gains[6];
+
     float               _throttle_factor[AP_MOTORS_MAX_NUM_MOTORS]; // each motors contribution to throttle (climb/descent)
     float               _forward_factor[AP_MOTORS_MAX_NUM_MOTORS]; // each motors contribution to forward/backward
     float               _lateral_factor[AP_MOTORS_MAX_NUM_MOTORS];  // each motors contribution to lateral (left/right)
@@ -87,5 +89,5 @@ protected:
     } raw_command;
 
     int m_debug_counter = 0;
-//    AP_Float _wrench_gains[6];
+
 };
