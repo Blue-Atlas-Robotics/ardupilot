@@ -209,7 +209,6 @@ public:
         k_param_cam_slew_limit = 237, // deprecated
         k_param_lights_steps,
         k_param_pilot_speed_dn,
-
     };
 
     AP_Int16        format_version;
@@ -301,7 +300,7 @@ public:
 
     AP_Float                surface_depth;
     AP_Int8                 frame_configuration;
-
+    
     // Note: keep initializers here in the same order as they are declared
     // above.
     Parameters()

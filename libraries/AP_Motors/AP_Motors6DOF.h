@@ -8,13 +8,16 @@
 #include <RC_Channel/RC_Channel.h>     // RC Channel Library
 #include "AP_MotorsMatrix.h"
 
+#include <queue>
+#include <vector>
+
 /// @class      AP_MotorsMatrix
 class AP_Motors6DOF : public AP_MotorsMatrix {
 public:
 
     AP_Motors6DOF(uint16_t loop_rate, uint16_t speed_hz = AP_MOTORS_SPEED_DEFAULT) :
         AP_MotorsMatrix(loop_rate, speed_hz) {
-        AP_Param::setup_object_defaults(this, var_info);
+        AP_Param::setup_object_defaults(this, var_info);        
     };
 
     // Supported frame types
@@ -68,6 +71,7 @@ protected:
 
     AP_Float _wrench_gains[6];
     AP_Float _maximum_thrust;
+    AP_Int16 _pwm_delay_ms;
 
     float               _throttle_factor[AP_MOTORS_MAX_NUM_MOTORS]; // each motors contribution to throttle (climb/descent)
     float               _forward_factor[AP_MOTORS_MAX_NUM_MOTORS]; // each motors contribution to forward/backward
@@ -90,5 +94,9 @@ protected:
     } raw_command;
 
     int m_debug_counter = 0;
+
+    std::vector<std::queue<int> > thruster_queues;
+    bool delay_pwm;
+    bool delay_applied{false};
 
 };

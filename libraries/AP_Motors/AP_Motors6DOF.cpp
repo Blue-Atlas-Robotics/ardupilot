@@ -176,6 +176,14 @@ const AP_Param::GroupInfo AP_Motors6DOF::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("MAX_THR", 21, AP_Motors6DOF, _maximum_thrust, 60.0f),
 
+    // @Param: PWM_DELAY_MS
+    // @DisplayName: PWM delay ms
+    // @Description: Delay the pwm output to the motors by ms
+    // @Range: 0 32767
+    // @Increment: 1
+    // @User: Standard
+    AP_GROUPINFO("PWM_DELAY_MS", 22, AP_Motors6DOF, _pwm_delay_ms, 0),
+
     AP_GROUPEND
 };
 
@@ -314,6 +322,35 @@ void AP_Motors6DOF::output_to_motors()
     int8_t i;
     int16_t motor_out[AP_MOTORS_MAX_NUM_MOTORS];    // final pwm values sent to the motor
 
+    // Initialize the delay queues if delay > 0
+    if (!delay_applied)
+    {
+
+        if (_pwm_delay_ms > 0)
+        {
+            delay_pwm = true;
+            
+            // Update rate of motor function is 400Hz -> 2.5ms
+            int queue_sz = static_cast<int>(static_cast<float>(_pwm_delay_ms) / 2.5);
+
+            // Initialize the thruster queues
+            for (int i = 0 ; i < AP_MOTORS_MAX_NUM_MOTORS ; i++)
+            {
+                std::queue<int> tmp;
+                for (int j = 0; j < queue_sz ; j++)
+                    tmp.push(1500);
+                thruster_queues.push_back(tmp);
+            }
+
+        }
+        else
+        {
+            delay_pwm = false;
+        }
+
+        delay_applied = true;
+    }
+
     switch (_spool_mode) {
     case SHUT_DOWN:
         // sends minimum values out to the motors
@@ -354,20 +391,33 @@ void AP_Motors6DOF::output_to_motors()
     }
 //
 //    if (m_debug_counter > 10) {
-//      gcs().send_text(MAV_SEVERITY_DEBUG, "%u|%u|%u|%u|%u|%u|%u|%u",
-//                      motor_out[0], motor_out[1], motor_out[2], motor_out[3],
-//                      motor_out[4], motor_out[5], motor_out[6], motor_out[7]);
-//      m_debug_counter = 0;
+     gcs().send_text(MAV_SEVERITY_DEBUG, "%u|%u|%u|%u|%u",
+                     motor_out[0], thruster_queues[0].front(), motor_out[1], thruster_queues[1].front(), delay_pwm);
+    //      m_debug_counter = 0;
 //    } else {
 //      m_debug_counter += 1;
 //    }
 
     // send output to each motor
-    for (i=0; i<AP_MOTORS_MAX_NUM_MOTORS; i++) {
-        if (motor_enabled[i]) {
-            rc_write(i, motor_out[i]);
-//            rc_write(i, 1500U);
-        }
+    if (delay_pwm)
+    {
+       for (i=0; i<AP_MOTORS_MAX_NUM_MOTORS; i++)
+       {
+            if (motor_enabled[i]) 
+            {
+                rc_write(i, thruster_queues[i].front());
+                thruster_queues[i].pop();
+                thruster_queues[i].push(motor_out[i]);
+            }
+       } 
+    }
+    else
+    {
+        for (i=0; i<AP_MOTORS_MAX_NUM_MOTORS; i++)
+        {
+            if (motor_enabled[i]) 
+                rc_write(i, motor_out[i]);
+        } 
     }
 }
 
