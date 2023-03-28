@@ -391,8 +391,8 @@ void AP_Motors6DOF::output_to_motors()
     }
 //
 //    if (m_debug_counter > 10) {
-     gcs().send_text(MAV_SEVERITY_DEBUG, "%u|%u|%u|%u|%u",
-                     motor_out[0], thruster_queues[0].front(), motor_out[1], thruster_queues[1].front(), delay_pwm);
+    //  gcs().send_text(MAV_SEVERITY_DEBUG, "%u|%u|%u|%u|%u",
+    //                  motor_out[0], thruster_queues[0].front(), motor_out[1], thruster_queues[1].front(), delay_pwm);
     //      m_debug_counter = 0;
 //    } else {
 //      m_debug_counter += 1;
