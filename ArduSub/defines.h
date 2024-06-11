@@ -42,7 +42,7 @@ enum control_mode_t {
     MANUAL =       19,   // Pass-through input with no stabilization
     RAW =          20   // Pass-through rc pwms to motors
 };
-
+//Test commit
 enum mode_reason_t {
     MODE_REASON_UNKNOWN=0,
     MODE_REASON_TX_COMMAND,
