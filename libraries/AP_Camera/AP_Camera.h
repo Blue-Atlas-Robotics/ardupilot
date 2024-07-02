@@ -3,14 +3,8 @@
 #pragma once
 
 #include <AP_Param/AP_Param.h>
-#include <AP_Common/AP_Common.h>
-#include <AP_Relay/AP_Relay.h>
-#include <AP_AHRS/AP_AHRS.h>
-
-#define AP_CAMERA_TRIGGER_TYPE_SERVO                0
-#define AP_CAMERA_TRIGGER_TYPE_RELAY                1
-
-#define AP_CAMERA_TRIGGER_DEFAULT_TRIGGER_TYPE  AP_CAMERA_TRIGGER_TYPE_SERVO    // default is to use servo to trigger camera
+#include <GCS_MAVLink/GCS.h>
+#include <AP_Logger/AP_Logger.h>
 
 #define AP_CAMERA_TRIGGER_DEFAULT_DURATION  10      // default duration servo or relay is held open in 10ths of a second (i.e. 10 = 1 second)
 
@@ -24,13 +18,11 @@
 class AP_Camera {
 
 public:
-    AP_Camera(AP_Relay *obj_relay, uint32_t _log_camera_bit, const struct Location &_loc, const AP_AHRS &_ahrs)
+    AP_Camera(uint32_t _log_camera_bit, const struct Location &_loc)
         : log_camera_bit(_log_camera_bit)
         , current_loc(_loc)
-        , ahrs(_ahrs)
     {
         AP_Param::setup_object_defaults(this, var_info);
-        _apm_relay = obj_relay;
         _singleton = this;
     }
 
@@ -45,8 +37,9 @@ public:
     }
 
     // MAVLink methods
-    void            control_msg(const mavlink_message_t* msg);
-    void            send_feedback(mavlink_channel_t chan);
+    void            handle_message(mavlink_channel_t chan,
+                                   const mavlink_message_t &msg);
+    void            send_feedback(mavlink_channel_t chan) const;
 
     // Command processing
     void            configure(float shooting_mode, float shutter_speed, float aperture, float ISO, float exposure_type, float cmd_id, float engine_cutoff_time);
@@ -59,13 +52,13 @@ public:
         _trigg_dist.set(distance_m);
     }
 
+    // momentary switch to change camera modes
+    void cam_mode_toggle();
+
     void take_picture();
 
-    // Update - to be called periodically @at least 10Hz
+    // Update - to be called periodically @at least 50Hz
     void update();
-
-    // update camera trigger - 50Hz
-    void update_trigger();
 
     static const struct AP_Param::GroupInfo        var_info[];
 
@@ -80,18 +73,27 @@ public:
         CAMERA_TYPE_BMMCC
     };
 
+    enum class CamTrigType {
+        servo   = 0,
+        relay   = 1,
+        gopro   = 2,
+    };
+
+    AP_Camera::CamTrigType get_trigger_type(void);
+
 private:
 
     static AP_Camera *_singleton;
 
-    AP_Int8         _trigger_type;      // 0:Servo,1:Relay
+    void            control_msg(const mavlink_message_t &msg);
+
+    AP_Int8         _trigger_type;      // 0:Servo,1:Relay, 2:GoPro in Solo Gimbal
     AP_Int8         _trigger_duration;  // duration in 10ths of a second that the camera shutter is held open
     AP_Int8         _relay_on;          // relay value to trigger camera
     AP_Int16        _servo_on_pwm;      // PWM value to move servo to when shutter is activated
     AP_Int16        _servo_off_pwm;     // PWM value to move servo to when shutter is deactivated
     uint8_t         _trigger_counter;   // count of number of cycles shutter has been held open
     uint8_t         _trigger_counter_cam_function;   // count of number of cycles alternative camera function has been held open
-    AP_Relay       *_apm_relay;         // pointer to relay object from the base class Relay.
     AP_Int8         _auto_mode_only;    // if 1: trigger by distance only if in AUTO mode.
     AP_Int8         _type;              // Set the type of camera in use, will open additional parameters if set
     bool            _is_in_auto_mode;   // true if in AUTO mode
@@ -122,9 +124,16 @@ private:
 
     void log_picture();
 
+    // Logging Function
+    void Write_Camera(uint64_t timestamp_us=0);
+    void Write_Trigger(void);
+    void Write_CameraInfo(enum LogMessages msg, uint64_t timestamp_us=0);
+
     uint32_t log_camera_bit;
     const struct Location &current_loc;
-    const AP_AHRS &ahrs;
+
+    // update camera trigger - 50Hz
+    void update_trigger();
 
     // entry point to trip local shutter (e.g. by relay or servo)
     void trigger_pic();

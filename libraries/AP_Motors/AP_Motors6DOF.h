@@ -29,6 +29,8 @@ public:
         SUB_FRAME_CUSTOM
     } sub_frame_t;
 
+    const char* get_frame_string() const override { return _frame_class_string; };
+
     // Override parent
     void setup_motors(motor_frame_class frame_class, motor_frame_type frame_type) override;
 
@@ -46,6 +48,20 @@ public:
     void disable_raw() { raw_command.is_raw = false; };
     bool is_raw() { return raw_command.is_raw; };
     uint16_t get_raw_command(uint8_t chan);
+    // returns a vector with roll, pitch, and yaw contributions
+    Vector3f get_motor_angular_factors(int motor_number);
+
+    // returns true if motor is enabled
+    bool motor_is_enabled(int motor_number);
+
+    bool set_reversed(int motor_number, bool reversed);
+
+    // This allows us to read back the output of the altidude controllers
+    // The controllers are in charge of the throttle input, so this gives vehicle access/visibility to the output of those controllers
+    float get_throttle_in_bidirectional() const { return constrain_float(2*(_throttle_in - 0.5f), -1.0f, 1.0f); }
+
+    // Sub assumes vehicles are neutrally buoyant
+    virtual float get_throttle_hover() const override { return 0.5f; }
 
     // var_info for holding Parameter information
     static const struct AP_Param::GroupInfo        var_info[];
@@ -69,7 +85,6 @@ protected:
     AP_Float _wrench_gains[6];
     AP_Float _maximum_thrust;
 
-    float               _throttle_factor[AP_MOTORS_MAX_NUM_MOTORS]; // each motors contribution to throttle (climb/descent)
     float               _forward_factor[AP_MOTORS_MAX_NUM_MOTORS]; // each motors contribution to forward/backward
     float               _lateral_factor[AP_MOTORS_MAX_NUM_MOTORS];  // each motors contribution to lateral (left/right)
 

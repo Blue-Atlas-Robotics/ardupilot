@@ -33,18 +33,15 @@
 #define FLIP_PITCH_FORWARD  -1      // used to set flip_dir
 
 // flip_init - initialise flip controller
-bool Copter::ModeFlip::init(bool ignore_checks)
+bool ModeFlip::init(bool ignore_checks)
 {
-    // only allow flip from ACRO, Stabilize, AltHold or Drift flight modes
-    if (copter.control_mode != ACRO &&
-        copter.control_mode != STABILIZE &&
-        copter.control_mode != ALT_HOLD &&
-        copter.control_mode != FLOWHOLD) {
+    // only allow flip from some flight modes, for example ACRO, Stabilize, AltHold or FlowHold flight modes
+    if (!copter.flightmode->allows_flip()) {
         return false;
     }
 
     // if in acro or stabilize ensure throttle is above zero
-    if (ap.throttle_zero && (copter.control_mode == ACRO || copter.control_mode == STABILIZE)) {
+    if (copter.ap.throttle_zero && (copter.flightmode->mode_number() == Mode::Number::ACRO || copter.flightmode->mode_number() == Mode::Number::STABILIZE)) {
         return false;
     }
 
@@ -54,12 +51,12 @@ bool Copter::ModeFlip::init(bool ignore_checks)
     }
 
     // only allow flip when flying
-    if (!motors->armed() || ap.land_complete) {
+    if (!motors->armed() || copter.ap.land_complete) {
         return false;
     }
 
     // capture original flight mode so that we can return to it after completion
-    orig_control_mode = copter.control_mode;
+    orig_control_mode = copter.flightmode->mode_number();
 
     // initialise state
     _state = FlipState::Start;
@@ -79,7 +76,7 @@ bool Copter::ModeFlip::init(bool ignore_checks)
     }
 
     // log start of flip
-    Log_Write_Event(DATA_FLIP_START);
+    AP::logger().Write_Event(LogEvent::FLIP_START);
 
     // capture current attitude which will be used during the FlipState::Recovery stage
     const float angle_max = copter.aparm.angle_max;
@@ -92,7 +89,7 @@ bool Copter::ModeFlip::init(bool ignore_checks)
 
 // run - runs the flip controller
 // should be called at 100hz or more
-void Copter::ModeFlip::run()
+void ModeFlip::run()
 {
     // if pilot inputs roll > 40deg or timeout occurs abandon flip
     if (!motors->armed() || (abs(channel_roll->get_control_in()) >= 4000) || (abs(channel_pitch->get_control_in()) >= 4000) || ((millis() - start_time_ms) > FLIP_TIMEOUT_MS)) {
@@ -103,7 +100,7 @@ void Copter::ModeFlip::run()
     float throttle_out = get_pilot_desired_throttle();
 
     // set motors to full range
-    motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
+    motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
 
     // get corrected angle based on direction and axis of rotation
     // we flip the sign of flip_angle to minimize the code repetition
@@ -192,20 +189,21 @@ void Copter::ModeFlip::run()
         // check for successful recovery
         if (fabsf(recovery_angle) <= FLIP_RECOVERY_ANGLE) {
             // restore original flight mode
-            if (!copter.set_mode(orig_control_mode, MODE_REASON_FLIP_COMPLETE)) {
+            if (!copter.set_mode(orig_control_mode, ModeReason::FLIP_COMPLETE)) {
                 // this should never happen but just in case
-                copter.set_mode(STABILIZE, MODE_REASON_UNKNOWN);
+                copter.set_mode(Mode::Number::STABILIZE, ModeReason::UNKNOWN);
             }
             // log successful completion
-            Log_Write_Event(DATA_FLIP_END);
+            AP::logger().Write_Event(LogEvent::FLIP_END);
         }
         break;
+
     }
     case FlipState::Abandon:
         // restore original flight mode
-        if (!copter.set_mode(orig_control_mode, MODE_REASON_FLIP_COMPLETE)) {
+        if (!copter.set_mode(orig_control_mode, ModeReason::FLIP_COMPLETE)) {
             // this should never happen but just in case
-            copter.set_mode(STABILIZE, MODE_REASON_UNKNOWN);
+            copter.set_mode(Mode::Number::STABILIZE, ModeReason::UNKNOWN);
         }
         // log abandoning flip
         AP::logger().Write_Error(LogErrorSubsystem::FLIP, LogErrorCode::FLIP_ABANDONED);

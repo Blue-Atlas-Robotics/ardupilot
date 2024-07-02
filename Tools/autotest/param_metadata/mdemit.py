@@ -5,20 +5,25 @@ Emit parameter documentation in markdown format
 
 from param import known_param_fields
 from emit import Emit
+import time
 import re
 import os
 
+# ArduSub documentation uses the page title as the top level heading.
+# OFFSET drops headings one level when compiling for those docs.
+OFFSET = '#' if os.getenv('BRDOC') else ''
+
 # Parameter groups disabled at compile time (Vehicle-specific)
-sub_blacklist = ['AVOID_', 'CIRCLE_', 'FLOW', 'MIS_', 'PRX', 'RALLY_', 'RCMAP_', 'RPM', 'TERRAIN_', 'WPNAV_']
+sub_blacklist = ['RCMAP_', 'TERRAIN_']
 
 # Parameter groups with redundant information (ie RCn_, SERVOn_)
 # We can keep the documentation concise by only documenting these once
-nparams = ['RCn_', 'SERVOn_', 'SRn_', 'BTNn_']
+nparams = ['RCn_', 'SERVOn_', 'SRn_', 'BTNn_', 'INS_TCALn_', 'BATTn_', 'BAROn_GND_', 'BAROn_WCF_', 'CAN_Dn_', 'CAN_Dn_KDE_', 'CAN_Dn_PC_', 'CAN_Dn_UC_','CAN_Dn_TST_', 'CAN_Pn_', 'RNGFNDn_']
 
 class MDEmit(Emit):
 
-    def __init__(self):
-        Emit.__init__(self)
+    def __init__(self, *args, **kwargs):
+        Emit.__init__(self, *args, **kwargs)
         fname = 'Parameters.md'
         self.nparams = []
         self.f = open(fname, mode='w')
@@ -27,16 +32,28 @@ class MDEmit(Emit):
         
         # Flag to generate navigation header for BlueRobotics' ArduSub docs
         if os.getenv('BRDOC') is not None:
-            self.header = """---\nlayout: default\ntitle: "Parameters"\npermalink: /parameters/\nnav:"""
+            now = time.strftime('%Y-%m-%dT%H:%M:%S%z')
+            now = now[:-2] + ':' + now[-2:]
+            self.header = """+++
+title = "Parameters"
+description = "Firmware parameter details."
+date = %s
+template = "docs/page.html"
+sort_by = "weight"
+weight = 10
+draft = false
+[extra]
+toc = true
+top = false""" % now
         
-        self.preamble = """\nThis is a complete list of the parameters which can be set via the MAVLink protocol in the EEPROM of your APM to control vehicle behaviour. This list is automatically generated from the latest ardupilot source code, and so may contain parameters which are not yet in the stable released versions of the code. Some parameters may only be available for developers, and are enabled at compile-time."""
+        self.preamble = """\nThis is a complete list of the parameters which can be set via the MAVLink protocol in the EEPROM of your autopilot to control vehicle behaviour. Some parameters may only be available for developers, and are enabled at compile-time."""
         self.t = ''
 
     def close(self):
         # Write navigation header for BlueRobotics' ArduSub docs
         if os.getenv('BRDOC') is not None:
             self.f.write(self.header)
-            self.f.write('\n---\n')
+            self.f.write('\n+++\n')
             
         self.f.write(self.preamble)
         self.f.write(self.t)
@@ -48,16 +65,16 @@ class MDEmit(Emit):
     def emit(self, g):
         nparam = False # Flag indicating this is a parameter group with redundant information (ie RCn_, SERVOn_)
         
-        if g.name == 'ArduSub':
+        if g.reference == 'ArduSub':
             self.blacklist = sub_blacklist
         
-        if self.blacklist is not None and g.name in self.blacklist:
+        if self.blacklist is not None and g.reference in self.blacklist:
             return
         
-        pname = g.name
+        pname = g.reference
         
         # Check to see this is a parameter group with redundant information
-        rename = re.sub('\d+', 'n', g.name)
+        rename = re.sub('\d+', 'n', g.reference)
         if rename in nparams:
             if rename in self.nparams:
                 return
@@ -71,11 +88,7 @@ class MDEmit(Emit):
         tag = tag.replace('_', '')
         link = tag.replace(' ', '-')
         
-        # Add group to navigation header for BlueRobotics' ArduSub docs
-        if os.getenv('BRDOC') is not None:
-            self.header += "\n- %s: %s" % (link.split('-')[0],link.lower())
-        
-        t = '\n\n# %s' % tag
+        t = '\n\n%s# %s' % (OFFSET, tag)
         
         for param in g.params:
             if not hasattr(param, 'DisplayName') or not hasattr(param, 'Description'):
@@ -85,7 +98,9 @@ class MDEmit(Emit):
             if nparam:
                 name = re.sub('\d+', 'n', name, 1)
             tag = '%s: %s' % (name, param.DisplayName)
-            t += '\n\n## %s' % tag
+            t += '\n\n%s## %s' % (OFFSET, tag)
+            if os.getenv('DIFF'):
+                continue
             if d.get('User', None) == 'Advanced':
                 t += '\n\n*Note: This parameter is for advanced users*'
             t += "\n\n%s" % param.Description

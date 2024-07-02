@@ -65,6 +65,10 @@ public:
     // return value is normally in range -1.0 to +1.0 but can be higher or lower
     float get_steering_out_heading(float heading_rad, float rate_max_rads, bool motor_limit_left, bool motor_limit_right, float dt);
 
+    // return a desired turn-rate given a desired heading in radians
+    // normally the results are later passed into get_steering_out_rate
+    float get_turn_rate_from_heading(float heading_rad, float rate_max_rads) const;
+
     // return a steering servo output given a desired yaw rate in radians/sec.
     // positive yaw is to the right
     // return value is normally in range -1.0 to +1.0 but can be higher or lower
@@ -78,6 +82,12 @@ public:
 
     // get actual lateral acceleration in m/s/s.  returns true on success.  For reporting purposes only
     bool get_lat_accel(float &lat_accel) const;
+
+    // calculate the turn rate in rad/sec given a lateral acceleration (in m/s/s) and speed (in m/s)
+    float get_turn_rate_from_lat_accel(float lat_accel, float speed) const;
+
+    // get the G limit lateral acceleration ( m/s/s), returning at least 0.1G
+    float get_turn_lat_accel_max() const { return MAX(_turn_lateral_G_max, 0.1f) * GRAVITY_MSS; }
 
     //
     // throttle / speed controller
@@ -136,11 +146,14 @@ public:
     // get minimum stopping distance (in meters) given a speed (in m/s)
     float get_stopping_distance(float speed) const;
 
-    // parameter var table
-    static const struct AP_Param::GroupInfo var_info[];
+    // get speed below which vehicle is considered stopped (in m/s)
+    float get_stop_speed() const { return MAX(_stop_speed, 0.0f); }
 
     // relax I terms of throttle and steering controllers
     void relax_I();
+
+    // parameter var table
+    static const struct AP_Param::GroupInfo var_info[];
 
 private:
 
@@ -160,6 +173,7 @@ private:
     AP_Float _stop_speed;           // speed control stop speed.  Motor outputs to zero once vehicle speed falls below this value
     AP_Float _steer_accel_max;      // steering angle acceleration max in deg/s/s
     AP_Float _steer_rate_max;       // steering rate control maximum rate in deg/s
+    AP_Float _turn_lateral_G_max;   // sterring maximum lateral acceleration limit in 'G'
 
     // steering control
     uint32_t _steer_lat_accel_last_ms;  // system time of last call to lateral acceleration controller (i.e. get_steering_out_lat_accel)

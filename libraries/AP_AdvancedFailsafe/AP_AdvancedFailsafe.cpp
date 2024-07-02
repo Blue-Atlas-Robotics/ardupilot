@@ -24,6 +24,10 @@
 #include <RC_Channel/RC_Channel.h>
 #include <SRV_Channel/SRV_Channel.h>
 #include <GCS_MAVLink/GCS.h>
+#include <AP_GPS/AP_GPS.h>
+#include <AP_Baro/AP_Baro.h>
+
+AP_AdvancedFailsafe *AP_AdvancedFailsafe::_singleton;
 
 extern const AP_HAL::HAL& hal;
 
@@ -45,6 +49,7 @@ const AP_Param::GroupInfo AP_AdvancedFailsafe::var_info[] = {
     // @DisplayName: Heartbeat Pin
     // @Description: This sets a digital output pin which is cycled at 10Hz when termination is not activated. Note that if a FS_TERM_PIN is set then the heartbeat pin will continue to cycle at 10Hz when termination is activated, to allow the termination board to distinguish between autopilot crash and termination.
     // @User: Advanced
+    // @Values: -1:Disabled,49:BB Blue GP0 pin 4,50:AUXOUT1,51:AUXOUT2,52:AUXOUT3,53:AUXOUT4,54:AUXOUT5,55:AUXOUT6,57:BB Blue GP0 pin 3,113:BB Blue GP0 pin 6,116:BB Blue GP0 pin 5
     AP_GROUPINFO("HB_PIN",      1, AP_AdvancedFailsafe, _heartbeat_pin, -1),
 
     // @Param: WP_COMMS
@@ -53,7 +58,7 @@ const AP_Param::GroupInfo AP_AdvancedFailsafe::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("WP_COMMS",    2, AP_AdvancedFailsafe, _wp_comms_hold, 0),
 
-    // @Param: GPS_LOSS
+    // @Param: WP_GPS_LOSS
     // @DisplayName: GPS Loss Waypoint
     // @Description: Waypoint number to navigate to on GPS lock loss
     // @User: Advanced
@@ -67,7 +72,7 @@ const AP_Param::GroupInfo AP_AdvancedFailsafe::var_info[] = {
 
     // @Param: TERM_ACTION
     // @DisplayName: Terminate action
-    // @Description: This can be used to force an action on flight termination. Normally this is handled by an external failsafe board, but you can setup APM to handle it here. Please consult the wiki for more information on the possible values of the parameter
+    // @Description: This can be used to force an action on flight termination. Normally this is handled by an external failsafe board, but you can setup ArduPilot to handle it here. Please consult the wiki for more information on the possible values of the parameter
     // @User: Advanced
     AP_GROUPINFO("TERM_ACTION", 6, AP_AdvancedFailsafe, _terminate_action, 0),
 
@@ -75,6 +80,7 @@ const AP_Param::GroupInfo AP_AdvancedFailsafe::var_info[] = {
     // @DisplayName: Terminate Pin
     // @Description: This sets a digital output pin to set high on flight termination
     // @User: Advanced
+    // @Values: -1:Disabled,49:BB Blue GP0 pin 4,50:AUXOUT1,51:AUXOUT2,52:AUXOUT3,53:AUXOUT4,54:AUXOUT5,55:AUXOUT6,57:BB Blue GP0 pin 3,113:BB Blue GP0 pin 6,116:BB Blue GP0 pin 5
     AP_GROUPINFO("TERM_PIN",    7, AP_AdvancedFailsafe, _terminate_pin,    -1),
 
     // @Param: AMSL_LIMIT
@@ -94,7 +100,7 @@ const AP_Param::GroupInfo AP_AdvancedFailsafe::var_info[] = {
     // @Param: QNH_PRESSURE
     // @DisplayName: QNH pressure
     // @Description: This sets the QNH pressure in millibars to be used for pressure altitude in the altitude limit. A value of zero disables the altitude limit.
-    // @Units: mbar
+    // @Units: hPa
     // @User: Advanced
     AP_GROUPINFO("QNH_PRESSURE", 10, AP_AdvancedFailsafe, _qnh_pressure,    0),
 
@@ -145,13 +151,20 @@ const AP_Param::GroupInfo AP_AdvancedFailsafe::var_info[] = {
     // @Units: s
     AP_GROUPINFO("RC_FAIL_TIME",   19, AP_AdvancedFailsafe, _rc_fail_time_seconds,    0),
 
+    // @Param: MAX_RANGE
+    // @DisplayName: Max allowed range
+    // @Description: This is the maximum range of the vehicle in kilometers from first arming. If the vehicle goes beyond this range then the TERM_ACTION is performed. A value of zero disables this feature.
+    // @User: Advanced
+    // @Units: km
+    AP_GROUPINFO("MAX_RANGE",   20, AP_AdvancedFailsafe, _max_range_km,    0),
+    
     AP_GROUPEND
 };
 
 // check for Failsafe conditions. This is called at 10Hz by the main
 // ArduPlane code
 void
-AP_AdvancedFailsafe::check(uint32_t last_heartbeat_ms, bool geofence_breached, uint32_t last_valid_rc_ms)
+AP_AdvancedFailsafe::check(bool geofence_breached, uint32_t last_valid_rc_ms)
 {    
     if (!_enable) {
         return;
@@ -166,6 +179,9 @@ AP_AdvancedFailsafe::check(uint32_t last_heartbeat_ms, bool geofence_breached, u
             }
         }
     }
+
+    // update max range check
+    max_range_update();
 
     enum control_mode mode = afs_mode();
     
@@ -187,9 +203,10 @@ AP_AdvancedFailsafe::check(uint32_t last_heartbeat_ms, bool geofence_breached, u
         hal.gpio->write(_manual_pin, mode==AFS_MANUAL);
     }
 
+    const uint32_t last_heartbeat_ms = gcs().sysid_myggcs_last_seen_time_ms();
     uint32_t now = AP_HAL::millis();
     bool gcs_link_ok = ((now - last_heartbeat_ms) < 10000);
-    bool gps_lock_ok = ((now - gps.last_fix_time_ms()) < 3000);
+    bool gps_lock_ok = ((now - AP::gps().last_fix_time_ms()) < 3000);
 
     switch (_state) {
     case STATE_PREFLIGHT:
@@ -324,6 +341,7 @@ AP_AdvancedFailsafe::check_altlimit(void)
 
     // see if the barometer is dead
     const AP_Baro &baro = AP::baro();
+    const AP_GPS &gps = AP::gps();
     if (AP_HAL::millis() - baro.get_last_update() > 5000) {
         // the barometer has been unresponsive for 5 seconds. See if we can switch to GPS
         if (_amsl_margin_gps != -1 &&
@@ -399,3 +417,51 @@ bool AP_AdvancedFailsafe::gcs_terminate(bool should_terminate, const char *reaso
     }
     return false;
 }
+
+/*
+  update check of maximum range
+ */
+void AP_AdvancedFailsafe::max_range_update(void)
+{
+    if (_max_range_km <= 0) {
+        return;
+    }
+
+    if (!_have_first_location) {
+        if (AP::gps().status() < AP_GPS::GPS_OK_FIX_3D) {
+            // wait for 3D fix
+            return;
+        }
+        if (!hal.util->get_soft_armed()) {
+            // wait for arming
+            return;
+        }
+        _first_location = AP::gps().location();
+        _have_first_location = true;
+    }
+
+    if (AP::gps().status() < AP_GPS::GPS_OK_FIX_2D) {
+        // don't trigger when dead-reckoning
+        return;
+    }
+    
+    // check distance from first location
+    float distance_km = _first_location.get_distance(AP::gps().location()) * 0.001;
+    if (distance_km > _max_range_km) {
+        uint32_t now = AP_HAL::millis();
+        if (now - _term_range_notice_ms > 5000) {
+            gcs().send_text(MAV_SEVERITY_CRITICAL, "Terminating due to range %.1fkm", distance_km);
+            _term_range_notice_ms = now;
+        }
+        _terminate.set_and_notify(1);
+    }
+}
+
+namespace AP {
+
+AP_AdvancedFailsafe *advancedfailsafe()
+{
+    return AP_AdvancedFailsafe::get_singleton();
+}
+
+};

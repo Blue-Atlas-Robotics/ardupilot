@@ -6,7 +6,7 @@
  */
 
 // stabilize_init - initialise stabilize controller
-bool Copter::ModeStabilize_Heli::init(bool ignore_checks)
+bool ModeStabilize_Heli::init(bool ignore_checks)
 {
     // set stab collective true to use stabilize scaled collective pitch range
     copter.input_manager.set_use_stab_col(true);
@@ -16,7 +16,7 @@ bool Copter::ModeStabilize_Heli::init(bool ignore_checks)
 
 // stabilize_run - runs the main stabilize controller
 // should be called at 100hz or more
-void Copter::ModeStabilize_Heli::run()
+void ModeStabilize_Heli::run()
 {
     float target_roll, target_pitch;
     float target_yaw_rate;
@@ -41,27 +41,35 @@ void Copter::ModeStabilize_Heli::run()
 
     if (!motors->armed()) {
         // Motors should be Stopped
-        motors->set_desired_spool_state(AP_Motors::DESIRED_SHUT_DOWN);
+        motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::SHUT_DOWN);
     } else {
         // heli will not let the spool state progress to THROTTLE_UNLIMITED until motor interlock is enabled
-        motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
+        motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
     }
 
-    if (motors->get_spool_mode() == AP_Motors::SHUT_DOWN) {
+    switch (motors->get_spool_state()) {
+    case AP_Motors::SpoolState::SHUT_DOWN:
         // Motors Stopped
-        attitude_control->set_yaw_target_to_current_heading();
+        attitude_control->reset_yaw_target_and_rate(false);
         attitude_control->reset_rate_controller_I_terms();
-    } else if (motors->get_spool_mode() == AP_Motors::GROUND_IDLE) {
-        // Landed
-        if (motors->init_targets_on_arming()) {
-            attitude_control->set_yaw_target_to_current_heading();
-            attitude_control->reset_rate_controller_I_terms();
+        break;
+    case AP_Motors::SpoolState::GROUND_IDLE:
+        // If aircraft is landed, set target heading to current and reset the integrator
+        // Otherwise motors could be at ground idle for practice autorotation
+        if ((motors->init_targets_on_arming() && motors->using_leaky_integrator()) || (copter.ap.land_complete && !motors->using_leaky_integrator())) {
+            attitude_control->reset_yaw_target_and_rate(false);
+            attitude_control->reset_rate_controller_I_terms_smoothly();
         }
-    } else if (motors->get_spool_mode() == AP_Motors::THROTTLE_UNLIMITED) {
-        // clear landing flag above zero throttle
-        if (!motors->limit.throttle_lower) {
-            set_land_complete(false);
+        break;
+    case AP_Motors::SpoolState::THROTTLE_UNLIMITED:
+        if (copter.ap.land_complete && !motors->using_leaky_integrator()) {
+            attitude_control->reset_rate_controller_I_terms_smoothly();
         }
+        break;
+    case AP_Motors::SpoolState::SPOOLING_UP:
+    case AP_Motors::SpoolState::SPOOLING_DOWN:
+        // do nothing
+        break;
     }
 
     // call attitude controller

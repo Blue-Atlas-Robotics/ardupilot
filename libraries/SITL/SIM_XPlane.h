@@ -29,14 +29,14 @@ namespace SITL {
  */
 class XPlane : public Aircraft {
 public:
-    XPlane(const char *home_str, const char *frame_str);
+    XPlane(const char *frame_str);
 
     /* update model by one time step */
     void update(const struct sitl_input &input) override;
 
     /* static object creator */
-    static Aircraft *create(const char *home_str, const char *frame_str) {
-        return new XPlane(home_str, frame_str);
+    static Aircraft *create(const char *frame_str) {
+        return new XPlane(frame_str);
     }
 
 private:
@@ -54,7 +54,7 @@ private:
 
     uint64_t time_base_us;
     uint32_t last_data_time_ms;
-    Vector3f position_zero;
+    Vector3d position_zero;
     Vector3f accel_earth;
     float throttle_sent = -1;
     bool connected = false;

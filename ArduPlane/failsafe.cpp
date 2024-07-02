@@ -39,7 +39,13 @@ void Plane::failsafe_check(void)
     }
 
     if (in_failsafe && tnow - last_timestamp > 20000) {
+
+        // ensure we have the latest RC inputs
+        rc().read_input();
+
         last_timestamp = tnow;
+
+        rc().read_input();
 
 #if ADVANCED_FAILSAFE == ENABLED
         if (in_calibration) {
@@ -57,10 +63,10 @@ void Plane::failsafe_check(void)
         // pass RC inputs to outputs every 20ms
         RC_Channels::clear_overrides();
 
-        int16_t roll = channel_roll->get_control_in_zero_dz();
-        int16_t pitch = channel_pitch->get_control_in_zero_dz();
+        int16_t roll = roll_in_expo(false);
+        int16_t pitch = pitch_in_expo(false);
         int16_t throttle = get_throttle_input(true);
-        int16_t rudder = channel_rudder->get_control_in_zero_dz();
+        int16_t rudder = rudder_in_expo(false);
 
         if (!hal.util->get_soft_armed()) {
             throttle = 0;
@@ -80,7 +86,9 @@ void Plane::failsafe_check(void)
 #if ADVANCED_FAILSAFE == ENABLED
         if (afs.should_crash_vehicle()) {
             afs.terminate_vehicle();
-            return;
+            if (!afs.terminating_vehicle_via_landing()) {
+                return;
+            }
         }
 #endif
 
@@ -94,5 +102,14 @@ void Plane::failsafe_check(void)
         flaperon_update(0);
 
         servos_output();
+
+        // in SITL we send through the servo outputs so we can verify
+        // we're manipulating surfaces
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+        GCS_MAVLINK *chan = gcs().chan(0);
+        if (HAVE_PAYLOAD_SPACE(chan->get_chan(), SERVO_OUTPUT_RAW)) {
+            chan->send_servo_output_raw();
+        }
+#endif
     }
 }

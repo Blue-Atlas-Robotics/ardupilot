@@ -19,7 +19,6 @@
 /*
  *  this module deals with calculations involving struct Location
  */
-#include <AP_HAL/AP_HAL.h>
 #include <stdlib.h>
 #include "AP_Math.h"
 #include "location.h"
@@ -39,55 +38,6 @@ float get_bearing_cd(const Vector3f &origin, const Vector3f &destination)
     }
     return bearing;
 }
-
-// see if location is past a line perpendicular to
-// the line between point1 and point2. If point1 is
-// our previous waypoint and point2 is our target waypoint
-// then this function returns true if we have flown past
-// the target waypoint
-bool location_passed_point(const struct Location &location,
-                           const struct Location &point1,
-                           const struct Location &point2)
-{
-    return location_path_proportion(location, point1, point2) >= 1.0f;
-}
-
-
-/*
-  return the proportion we are along the path from point1 to
-  point2, along a line parallel to point1<->point2.
-
-  This will be less than >1 if we have passed point2
- */
-float location_path_proportion(const struct Location &location,
-                               const struct Location &point1,
-                               const struct Location &point2)
-{
-    const Vector2f vec1 = point1.get_distance_NE(point2);
-    const Vector2f vec2 = point1.get_distance_NE(location);
-    float dsquared = sq(vec1.x) + sq(vec1.y);
-    if (dsquared < 0.001f) {
-        // the two points are very close together
-        return 1.0f;
-    }
-    return (vec1 * vec2) / dsquared;
-}
-
-
-
-
-
-/*
-  return the distance in meters in North/East/Down plane as a N/E/D vector
-  from loc1 to loc2
- */
-Vector3f location_3d_diff_NED(const struct Location &loc1, const struct Location &loc2)
-{
-    return Vector3f((loc2.lat - loc1.lat) * LOCATION_SCALING_FACTOR,
-                    (loc2.lng - loc1.lng) * LOCATION_SCALING_FACTOR * loc1.longitude_scale(),
-                    (loc1.alt - loc2.alt) * 0.01f);
-}
-
 
 // return true when lat and lng are within range
 bool check_lat(float lat)
@@ -114,7 +64,4 @@ bool check_latlng(int32_t lat, int32_t lng)
 {
     return check_lat(lat) && check_lng(lng);
 }
-bool check_latlng(Location loc)
-{
-    return check_lat(loc.lat) && check_lng(loc.lng);
-}
+
