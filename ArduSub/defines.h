@@ -39,8 +39,8 @@ enum control_mode_t : uint8_t {
     CIRCLE =        7,  // automatic circular flight with automatic throttle
     SURFACE =       9,  // automatically return to surface, pilot maintains horizontal control
     POSHOLD =      16,  // automatic position hold with manual override, with automatic throttle
-    MANUAL =       19,  // Pass-through input with no stabilization
-    MOTOR_DETECT = 20   // Automatically detect motors orientation
+    MANUAL =       19,   // Pass-through input with no stabilization
+    RAW =          20   // Pass-through rc pwms to motors
 };
 //Test commit
 enum mode_reason_t {
