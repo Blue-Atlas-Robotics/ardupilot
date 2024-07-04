@@ -891,7 +891,7 @@ void GCS_MAVLINK_Sub::handleMessage(const mavlink_message_t &msg)
 
     case MAVLINK_MSG_ID_RC_CHANNELS_RAW:
         mavlink_rc_channels_raw_t packet;
-        mavlink_msg_rc_channels_raw_decode(msg, &packet);
+        mavlink_msg_rc_channels_raw_decode(&msg, &packet);
 
         sub.failsafe.last_pilot_input_ms = AP_HAL::millis();
 
