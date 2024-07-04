@@ -115,6 +115,95 @@ void GCS_MAVLINK_Sub::send_scaled_pressure3()
         sub.celsius.temperature() * 100);
 }
 
+
+void GCS_MAVLINK_Sub::send_attitude_quaternion()
+{
+    const AP_AHRS &ahrs = AP::ahrs();
+    const Vector3f omega = ahrs.get_gyro();
+
+    Quaternion q;
+    q.from_rotation_matrix(ahrs.get_rotation_body_to_ned());
+
+    mavlink_msg_attitude_quaternion_send(
+        chan,
+        AP_HAL::millis(),
+        q.q1,
+        q.q2,
+        q.q3,
+        q.q4,
+        omega.x,
+        omega.y,
+        omega.z);
+}
+
+
+void GCS_MAVLINK_Sub::send_pwms()
+{
+  mavlink_channel_t chan = MAVLINK_COMM_0;
+  uint32_t time_boot_ms = AP_HAL::millis();
+  uint8_t port = 0;
+  uint8_t rssi = 0;
+
+  mavlink_msg_rc_channels_scaled_send(
+      chan,
+      time_boot_ms,
+      port,
+      sub.motors.get_raw_command(AP_MOTORS_MOT_1),
+      sub.motors.get_raw_command(AP_MOTORS_MOT_2),
+      sub.motors.get_raw_command(AP_MOTORS_MOT_3),
+      sub.motors.get_raw_command(AP_MOTORS_MOT_4),
+      sub.motors.get_raw_command(AP_MOTORS_MOT_5),
+      sub.motors.get_raw_command(AP_MOTORS_MOT_6),
+      sub.motors.get_raw_command(AP_MOTORS_MOT_7),
+      sub.motors.get_raw_command(AP_MOTORS_MOT_8),
+      rssi
+  );
+}
+
+
+void GCS_MAVLINK_Sub::send_control_system_state()
+{
+    const AP_AHRS &ahrs = AP::ahrs();
+    const Vector3f acc_ef = ahrs.get_accel_ef();
+
+    Quaternion q_btn;
+    Quaternion q_acc;
+
+    q_btn.from_rotation_matrix(ahrs.get_rotation_body_to_ned());
+
+    q_acc.q1 = 0.0f;
+    q_acc.q2 = acc_ef.x;
+    q_acc.q3 = acc_ef.y;
+    q_acc.q4 = acc_ef.z + GRAVITY_MSS;
+
+    q_acc = q_btn.inverse() * q_acc * q_btn;
+
+    mavlink_channel_t chan = MAVLINK_COMM_0;
+    mavlink_control_system_state_t control_system_state = {};
+
+    control_system_state.time_usec = AP_HAL::micros64(); /*< [us] Timestamp (UNIX Epoch time or time since system boot). The receiving end can infer timestamp format (since 1.1.1970 or since system boot) by checking for the magnitude the number.*/
+    control_system_state.x_acc = acc_ef.x; /*< [m/s/s] X acceleration in earth frame*/
+    control_system_state.y_acc = acc_ef.y; /*< [m/s/s] Y acceleration in earth frame*/
+    control_system_state.z_acc = acc_ef.z; /*< [m/s/s] Z acceleration in earth frame*/
+    control_system_state.x_vel = q_acc.q2; /*< [m/s/s] X acceleration in body frame*/
+    control_system_state.y_vel = q_acc.q3; /*< [m/s/s] Y acceleration in body frame*/
+    control_system_state.z_vel = q_acc.q4; /*< [m/s/s] Z acceleration in body frame*/
+  //  TODO, find another message or build our own.
+  //  control_system_state.x_pos = 0.0f; /*< [m] X position in local frame*/
+  //  control_system_state.y_pos = 0.0f; /*< [m] Y position in local frame*/
+  //  control_system_state.z_pos = 0.0f; /*< [m] Z position in local frame*/
+  //  control_system_state.airspeed = 0.0f; /*< [m/s] Airspeed, set to -1 if unknown*/
+  //  control_system_state.vel_variance[3] = {0.0f}; /*<  Variance of body velocity estimate*/
+  //  control_system_state.pos_variance[3] = {0.0f}; /*<  Variance in local position*/
+  //  control_system_state.q[4]; /*<  The attitude, represented as Quaternion*/
+  //  control_system_state.roll_rate; /*< [rad/s] Angular rate in roll axis*/
+  //  control_system_state.pitch_rate; /*< [rad/s] Angular rate in pitch axis*/
+  //  control_system_state.yaw_rate; /*< [rad/s] Angular rate in yaw axis*/
+
+    mavlink_msg_control_system_state_send_struct(chan, &control_system_state);
+}
+
+
 bool GCS_MAVLINK_Sub::send_info()
 {
     // Just do this all at once, hopefully the hard-wire telemetry requirement means this is ok
@@ -235,7 +324,19 @@ bool GCS_MAVLINK_Sub::try_send_message(enum ap_message id)
     switch (id) {
 
     case MSG_NAMED_FLOAT:
-        send_info();
+//        send_info();
+        break;
+
+    case MSG_ATTITUDE_QUATERNION:
+        send_attitude_quaternion();
+        break;
+
+    case MSG_CONTROL_SYSTEM_STATE:
+        send_control_system_state();
+        break;
+
+    case MSG_RC_CHANNELS_SCALED:
+        send_pwms();
         break;
 
     case MSG_TERRAIN:
@@ -330,8 +431,8 @@ const AP_Param::GroupInfo GCS_MAVLINK::var_info[] = {
 
 static const ap_message STREAM_RAW_SENSORS_msgs[] = {
     MSG_RAW_IMU,
-    MSG_SCALED_IMU2,
-    MSG_SCALED_IMU3,
+//    MSG_SCALED_IMU2,
+//    MSG_SCALED_IMU3,
     MSG_SCALED_PRESSURE,
     MSG_SCALED_PRESSURE2,
     MSG_SCALED_PRESSURE3,
@@ -341,18 +442,18 @@ static const ap_message STREAM_EXTENDED_STATUS_msgs[] = {
     MSG_SYS_STATUS,
     MSG_POWER_STATUS,
     MSG_MEMINFO,
-    MSG_CURRENT_WAYPOINT,
-    MSG_GPS_RAW,
-    MSG_GPS_RTK,
-    MSG_GPS2_RAW,
-    MSG_GPS2_RTK,
-    MSG_NAV_CONTROLLER_OUTPUT,
-    MSG_FENCE_STATUS,
-    MSG_NAMED_FLOAT
+//    MSG_CURRENT_WAYPOINT,
+//    MSG_GPS_RAW,
+//    MSG_GPS_RTK,
+//    MSG_GPS2_RAW,
+//    MSG_GPS2_RTK,
+//    MSG_NAV_CONTROLLER_OUTPUT,
+//    MSG_FENCE_STATUS,
+//    MSG_NAMED_FLOAT
 };
 static const ap_message STREAM_POSITION_msgs[] = {
-    MSG_LOCATION,
-    MSG_LOCAL_POSITION
+//    MSG_LOCATION,
+//    MSG_LOCAL_POSITION
 };
 static const ap_message STREAM_RC_CHANNELS_msgs[] = {
     MSG_SERVO_OUTPUT_RAW,
@@ -360,10 +461,13 @@ static const ap_message STREAM_RC_CHANNELS_msgs[] = {
 };
 static const ap_message STREAM_EXTRA1_msgs[] = {
     MSG_ATTITUDE,
+    MSG_ATTITUDE_QUATERNION,
+    MSG_CONTROL_SYSTEM_STATE,
+    MSG_RC_CHANNELS_SCALED,
     MSG_SIMSTATE,
-    MSG_AHRS2,
-    MSG_AHRS3,
-    MSG_PID_TUNING
+//    MSG_AHRS2,
+//    MSG_AHRS3,
+//    MSG_PID_TUNING
 };
 static const ap_message STREAM_EXTRA2_msgs[] = {
     MSG_VFR_HUD
@@ -372,16 +476,16 @@ static const ap_message STREAM_EXTRA3_msgs[] = {
     MSG_AHRS,
     MSG_HWSTATUS,
     MSG_SYSTEM_TIME,
-    MSG_RANGEFINDER,
-    MSG_DISTANCE_SENSOR,
+//    MSG_RANGEFINDER,
+//    MSG_DISTANCE_SENSOR,
 #if AP_TERRAIN_AVAILABLE && AC_TERRAIN
     MSG_TERRAIN,
 #endif
-    MSG_BATTERY2,
+//    MSG_BATTERY2,
     MSG_BATTERY_STATUS,
-    MSG_MOUNT_STATUS,
-    MSG_OPTICAL_FLOW,
-    MSG_GIMBAL_REPORT,
+//    MSG_MOUNT_STATUS,
+//    MSG_OPTICAL_FLOW,
+//    MSG_GIMBAL_REPORT,
     MSG_MAG_CAL_REPORT,
     MSG_MAG_CAL_PROGRESS,
     MSG_EKF_STATUS_REPORT,
@@ -536,6 +640,7 @@ MAV_RESULT GCS_MAVLINK_Sub::handle_command_long_packet(const mavlink_command_lon
             return MAV_RESULT_FAILED;
         }
         return MAV_RESULT_ACCEPTED;
+
 
     default:
         return GCS_MAVLINK::handle_command_long_packet(packet);
@@ -781,6 +886,25 @@ void GCS_MAVLINK_Sub::handleMessage(mavlink_message_t* msg)
             sub.leak_detector.set_detect();
         }
     }
+        break;
+
+    case MAVLINK_MSG_ID_RC_CHANNELS_RAW:
+        mavlink_rc_channels_raw_t packet;
+        mavlink_msg_rc_channels_raw_decode(msg, &packet);
+
+        sub.failsafe.last_pilot_input_ms = AP_HAL::millis();
+
+        if (sub.control_mode == RAW) {
+            sub.motors.set_raw_command(AP_MOTORS_MOT_1, packet.chan1_raw, sub.failsafe.last_pilot_input_ms);
+            sub.motors.set_raw_command(AP_MOTORS_MOT_2, packet.chan2_raw, sub.failsafe.last_pilot_input_ms);
+            sub.motors.set_raw_command(AP_MOTORS_MOT_3, packet.chan3_raw, sub.failsafe.last_pilot_input_ms);
+            sub.motors.set_raw_command(AP_MOTORS_MOT_4, packet.chan4_raw, sub.failsafe.last_pilot_input_ms);
+            sub.motors.set_raw_command(AP_MOTORS_MOT_5, packet.chan5_raw, sub.failsafe.last_pilot_input_ms);
+            sub.motors.set_raw_command(AP_MOTORS_MOT_6, packet.chan6_raw, sub.failsafe.last_pilot_input_ms);
+            sub.motors.set_raw_command(AP_MOTORS_MOT_7, packet.chan7_raw, sub.failsafe.last_pilot_input_ms);
+            sub.motors.set_raw_command(AP_MOTORS_MOT_8, packet.chan8_raw, sub.failsafe.last_pilot_input_ms);
+        }
+
         break;
 
     default:

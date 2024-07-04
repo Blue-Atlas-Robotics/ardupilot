@@ -23,6 +23,8 @@ bool Sub::althold_init()
 
     last_pilot_heading = ahrs.yaw_sensor;
 
+    sub.motors.disable_raw();
+
     return true;
 }
 

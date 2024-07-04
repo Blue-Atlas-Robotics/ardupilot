@@ -41,6 +41,12 @@ public:
     // output_to_motors - sends minimum values out to the motors
     void output_to_motors() override;
 
+    void set_raw_command(uint8_t chan, uint16_t pwm, uint32_t timestamp);
+    void enable_raw() { raw_command.is_raw = true; };
+    void disable_raw() { raw_command.is_raw = false; };
+    bool is_raw() { return raw_command.is_raw; };
+    uint16_t get_raw_command(uint8_t chan);
+
     // var_info for holding Parameter information
     static const struct AP_Param::GroupInfo        var_info[];
 
@@ -52,12 +58,16 @@ protected:
     void add_motor_raw_6dof(int8_t motor_num, float roll_fac, float pitch_fac, float yaw_fac, float climb_fac, float forward_fac, float lat_fac, uint8_t testing_order);
 
     void output_armed_stabilizing() override;
+    void output_armed_stabilizing_custom();
     void output_armed_stabilizing_vectored();
     void output_armed_stabilizing_vectored_6dof();
 
     // Parameters
     AP_Int8             _motor_reverse[AP_MOTORS_MAX_NUM_MOTORS];
     AP_Float            _forwardVerticalCouplingFactor;
+
+    AP_Float _wrench_gains[6];
+    AP_Float _maximum_thrust;
 
     float               _throttle_factor[AP_MOTORS_MAX_NUM_MOTORS]; // each motors contribution to throttle (climb/descent)
     float               _forward_factor[AP_MOTORS_MAX_NUM_MOTORS]; // each motors contribution to forward/backward
@@ -66,4 +76,19 @@ protected:
     // current limiting
     float _output_limited = 1.0f;
     float _batt_current_last = 0.0f;
+
+    // raw pwm values for direct motor control
+    struct {
+        bool is_raw = false;
+        uint32_t last_message_ms = 0;
+        uint16_t pwm[AP_MOTORS_MAX_NUM_MOTORS] = {1500U, 1500U,
+                                                  1500U, 1500U,
+                                                  1500U, 1500U,
+                                                  1500U, 1500U,
+                                                  1500U, 1500U,
+                                                  1500U, 1500U};
+    } raw_command;
+
+    int m_debug_counter = 0;
+
 };

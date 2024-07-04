@@ -565,6 +565,8 @@ private:
     void stabilize_run();
     bool manual_init(void);
     void manual_run();
+    bool raw_init(void);
+    void raw_run();
     void failsafe_sensors_check(void);
     void failsafe_crash_check();
     void failsafe_ekf_check(void);
