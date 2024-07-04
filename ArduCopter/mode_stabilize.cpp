@@ -6,7 +6,7 @@
 
 // stabilize_run - runs the main stabilize controller
 // should be called at 100hz or more
-void Copter::ModeStabilize::run()
+void ModeStabilize::run()
 {
     // apply simple mode transform to pilot inputs
     update_simple_mode();
@@ -20,27 +20,38 @@ void Copter::ModeStabilize::run()
 
     if (!motors->armed()) {
         // Motors should be Stopped
-        motors->set_desired_spool_state(AP_Motors::DESIRED_SHUT_DOWN);
-    } else if (ap.throttle_zero) {
+        motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::SHUT_DOWN);
+    } else if (copter.ap.throttle_zero) {
         // Attempting to Land
-        motors->set_desired_spool_state(AP_Motors::DESIRED_GROUND_IDLE);
+        motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);
     } else {
-        motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
+        motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
     }
 
-    if (motors->get_spool_mode() == AP_Motors::SHUT_DOWN) {
+    switch (motors->get_spool_state()) {
+    case AP_Motors::SpoolState::SHUT_DOWN:
         // Motors Stopped
-        attitude_control->set_yaw_target_to_current_heading();
+        attitude_control->reset_yaw_target_and_rate();
         attitude_control->reset_rate_controller_I_terms();
-    } else if (motors->get_spool_mode() == AP_Motors::GROUND_IDLE) {
+        break;
+
+    case AP_Motors::SpoolState::GROUND_IDLE:
         // Landed
-        attitude_control->set_yaw_target_to_current_heading();
-        attitude_control->reset_rate_controller_I_terms();
-    } else if (motors->get_spool_mode() == AP_Motors::THROTTLE_UNLIMITED) {
+        attitude_control->reset_yaw_target_and_rate();
+        attitude_control->reset_rate_controller_I_terms_smoothly();
+        break;
+
+    case AP_Motors::SpoolState::THROTTLE_UNLIMITED:
         // clear landing flag above zero throttle
         if (!motors->limit.throttle_lower) {
             set_land_complete(false);
         }
+        break;
+
+    case AP_Motors::SpoolState::SPOOLING_UP:
+    case AP_Motors::SpoolState::SPOOLING_DOWN:
+        // do nothing
+        break;
     }
 
     // call attitude controller

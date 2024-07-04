@@ -2,8 +2,14 @@
 
 #include "Sub.h"
 
+uint8_t GCS_Sub::sysid_this_mav() const
+{
+    return sub.g.sysid_this_mav;
+}
+
 void GCS_Sub::update_vehicle_sensor_status_flags()
 {
+    // mode-specific sensors:
     control_sensors_present |=
         MAV_SYS_STATUS_SENSOR_ANGULAR_RATE_CONTROL |
         MAV_SYS_STATUS_SENSOR_ATTITUDE_STABILIZATION |
@@ -18,28 +24,6 @@ void GCS_Sub::update_vehicle_sensor_status_flags()
         MAV_SYS_STATUS_SENSOR_ANGULAR_RATE_CONTROL |
         MAV_SYS_STATUS_SENSOR_ATTITUDE_STABILIZATION |
         MAV_SYS_STATUS_SENSOR_YAW_POSITION;
-
-    // first what sensors/controllers we have
-    if (AP::compass().enabled()) {
-        control_sensors_present |= MAV_SYS_STATUS_SENSOR_3D_MAG;
-        control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_3D_MAG;
-    }
-    if (sub.ap.depth_sensor_present) {
-        control_sensors_present |= MAV_SYS_STATUS_SENSOR_ABSOLUTE_PRESSURE;
-        control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_ABSOLUTE_PRESSURE;
-    }
-    const AP_GPS &gps = AP::gps();
-    if (gps.status() > AP_GPS::NO_GPS) {
-        control_sensors_present |= MAV_SYS_STATUS_SENSOR_GPS;
-        control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_GPS;
-    }
-#if OPTFLOW == ENABLED
-    const OpticalFlow *optflow = AP::opticalflow();
-    if (optflow && optflow->enabled()) {
-        control_sensors_present |= MAV_SYS_STATUS_SENSOR_OPTICAL_FLOW;
-        control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_OPTICAL_FLOW;
-    }
-#endif
 
     control_sensors_present |=
         MAV_SYS_STATUS_SENSOR_Z_ALTITUDE_CONTROL |
@@ -61,26 +45,30 @@ void GCS_Sub::update_vehicle_sensor_status_flags()
         break;
     }
 
+    // override the parent class's values for ABSOLUTE_PRESSURE to
+    // only check internal barometer:
+    if (sub.ap.depth_sensor_present) {
+        control_sensors_present |= MAV_SYS_STATUS_SENSOR_ABSOLUTE_PRESSURE;
+        control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_ABSOLUTE_PRESSURE;
+    }
     control_sensors_health &= ~MAV_SYS_STATUS_SENSOR_ABSOLUTE_PRESSURE; // check the internal barometer only
     if (sub.sensor_health.depth) {
         control_sensors_health |= MAV_SYS_STATUS_SENSOR_ABSOLUTE_PRESSURE;
     }
-    AP_AHRS &ahrs = AP::ahrs();
-    const Compass &compass = AP::compass();
-    if (AP::compass().enabled() && compass.healthy() && ahrs.use_compass()) {
-        control_sensors_health |= MAV_SYS_STATUS_SENSOR_3D_MAG;
-    }
-    if (gps.is_healthy()) {
-        control_sensors_health |= MAV_SYS_STATUS_SENSOR_GPS;
-    }
+
 #if OPTFLOW == ENABLED
+    const OpticalFlow *optflow = AP::opticalflow();
+    if (optflow && optflow->enabled()) {
+        control_sensors_present |= MAV_SYS_STATUS_SENSOR_OPTICAL_FLOW;
+        control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_OPTICAL_FLOW;
+    }
     if (optflow && optflow->healthy()) {
         control_sensors_health |= MAV_SYS_STATUS_SENSOR_OPTICAL_FLOW;
     }
 #endif
 
 #if AP_TERRAIN_AVAILABLE && AC_TERRAIN
-    switch (terrain.status()) {
+    switch (sub.terrain.status()) {
     case AP_Terrain::TerrainStatusDisabled:
         break;
     case AP_Terrain::TerrainStatusUnhealthy:
@@ -108,5 +96,7 @@ void GCS_Sub::update_vehicle_sensor_status_flags()
 #endif
 }
 
+// avoid building/linking LTM:
+void AP_LTM_Telem::init() {};
 // avoid building/linking Devo:
 void AP_DEVO_Telem::init() {};

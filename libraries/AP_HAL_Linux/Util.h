@@ -4,7 +4,6 @@
 #include <AP_HAL/AP_HAL.h>
 
 #include "Heat.h"
-#include "Perf.h"
 #if CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_DISCO
 #include "ToneAlarm_Disco.h"
 #endif
@@ -16,6 +15,7 @@ namespace Linux {
 enum hw_type {
     UTIL_HARDWARE_RPI1 = 0,
     UTIL_HARDWARE_RPI2,
+    UTIL_HARDWARE_RPI4,
     UTIL_HARDWARE_BEBOP,
     UTIL_HARDWARE_BEBOP2,
     UTIL_HARDWARE_DISCO,
@@ -49,6 +49,17 @@ public:
     void set_custom_storage_directory(const char *_custom_storage_directory) {
         custom_storage_directory = _custom_storage_directory;
     }
+    void set_custom_defaults_path(const char *_custom_defaults) {
+        custom_defaults = _custom_defaults;
+    }
+
+    // get path to custom defaults file for AP_Param
+    const char* get_custom_defaults_file() const override final {
+        return custom_defaults;
+    }
+
+    /* Parse cpu set in the form 0; 0,2; or 0-2 */
+    bool parse_cpu_set(const char *s, cpu_set_t *cpu_set) const;
 
     bool is_chardev_node(const char *path);
     void set_imu_temp(float current) override;
@@ -58,6 +69,12 @@ public:
 
     bool get_system_id(char buf[40]) override;
     bool get_system_id_unformatted(uint8_t buf[], uint8_t &len) override;
+
+#ifdef ENABLE_HEAP
+    // heap functions, note that a heap once alloc'd cannot be dealloc'd
+    virtual void *allocate_heap_memory(size_t size) override;
+    virtual void *heap_realloc(void *h, void *ptr, size_t new_size) override;
+#endif // ENABLE_HEAP
     
     /*
      * Write a string as specified by @fmt to the file in @path. Note this
@@ -73,29 +90,9 @@ public:
      */
     int read_file(const char *path, const char *fmt, ...) FMT_SCANF(3, 4);
 
-    perf_counter_t perf_alloc(enum perf_counter_type t, const char *name) override
-    {
-        return Perf::get_singleton()->add(t, name);
-    }
-
-    void perf_begin(perf_counter_t perf) override
-    {
-        return Perf::get_singleton()->begin(perf);
-    }
-
-    void perf_end(perf_counter_t perf) override
-    {
-        return Perf::get_singleton()->end(perf);
-    }
-
-    void perf_count(perf_counter_t perf) override
-    {
-        return Perf::get_singleton()->count(perf);
-    }
-
     int get_hw_arm32();
 
-    bool toneAlarm_init() override { return _toneAlarm.init(); }
+    bool toneAlarm_init(uint8_t types) override { return _toneAlarm.init(); }
     void toneAlarm_set_buzzer_tone(float frequency, float volume, uint32_t duration_ms) override {
         _toneAlarm.set_buzzer_tone(frequency, volume, duration_ms);
     }
@@ -112,7 +109,20 @@ private:
     const char *custom_log_directory = nullptr;
     const char *custom_terrain_directory = nullptr;
     const char *custom_storage_directory = nullptr;
+    const char *custom_defaults = HAL_PARAM_DEFAULTS_PATH;
     static const char *_hw_names[UTIL_NUM_HARDWARES];
+
+#ifdef ENABLE_HEAP
+    struct heap_allocation_header {
+        size_t allocation_size; // size of allocated block, not including this header
+    };
+
+    struct heap {
+      size_t max_heap_size;
+      size_t current_heap_usage;
+    };
+#endif // ENABLE_HEAP
+
 };
 
 }

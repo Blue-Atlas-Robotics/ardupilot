@@ -14,17 +14,23 @@
  *
  * Author: Eugene Shamaev, Siddharth Bharat Purohit
  */
-#ifndef AP_UAVCAN_H_
-#define AP_UAVCAN_H_
+#pragma once
+
+#include <AP_HAL/AP_HAL.h>
+
+#if HAL_ENABLE_LIBUAVCAN_DRIVERS
 
 #include <uavcan/uavcan.hpp>
-
-#include <AP_HAL/CAN.h>
+#include "AP_UAVCAN_DNA_Server.h"
+#include "AP_UAVCAN_IfaceMgr.h"
+#include "AP_UAVCAN_Clock.h"
+#include <AP_CANManager/AP_CANDriver.h>
 #include <AP_HAL/Semaphores.h>
 #include <AP_Param/AP_Param.h>
+#include <AP_ESC_Telem/AP_ESC_Telem_Backend.h>
 
 #include <uavcan/helpers/heap_based_pool_allocator.hpp>
-#include "AP_UAVCAN_Servers.h"
+
 
 #ifndef UAVCAN_NODE_POOL_SIZE
 #define UAVCAN_NODE_POOL_SIZE 8192
@@ -46,20 +52,40 @@
 
 #define AP_UAVCAN_MAX_LED_DEVICES 4
 
+// fwd-declare callback classes
+class ButtonCb;
+class TrafficReportCb;
+class ActuatorStatusCb;
+class ESCStatusCb;
+class DebugCb;
+
+#if defined(__GNUC__) && (__GNUC__ > 8)
+#define DISABLE_W_CAST_FUNCTION_TYPE_PUSH \
+    _Pragma("GCC diagnostic push") \
+    _Pragma("GCC diagnostic ignored \"-Wcast-function-type\"")
+#define DISABLE_W_CAST_FUNCTION_TYPE_POP \
+    _Pragma("GCC diagnostic pop")
+#else
+#define DISABLE_W_CAST_FUNCTION_TYPE_PUSH
+#define DISABLE_W_CAST_FUNCTION_TYPE_POP
+#endif
+
 /*
     Frontend Backend-Registry Binder: Whenever a message of said DataType_ from new node is received,
-    the Callback will invoke registery to register the node as separate backend.
+    the Callback will invoke registry to register the node as separate backend.
 */
 #define UC_REGISTRY_BINDER(ClassName_, DataType_) \
-	class ClassName_ : public AP_UAVCAN::RegistryBinder<DataType_> { \
+    class ClassName_ : public AP_UAVCAN::RegistryBinder<DataType_> { \
         typedef void (*CN_Registry)(AP_UAVCAN*, uint8_t, const ClassName_&); \
-	    public: \
-	        ClassName_() : RegistryBinder() {} \
-	        ClassName_(AP_UAVCAN* uc,  CN_Registry ffunc) : \
-				RegistryBinder(uc, (Registry)ffunc) {} \
-	}
+        public: \
+            ClassName_() : RegistryBinder() {} \
+            DISABLE_W_CAST_FUNCTION_TYPE_PUSH \
+            ClassName_(AP_UAVCAN* uc,  CN_Registry ffunc) : \
+                RegistryBinder(uc, (Registry)ffunc) {} \
+            DISABLE_W_CAST_FUNCTION_TYPE_POP \
+    }
 
-class AP_UAVCAN : public AP_HAL::CANProtocol {
+class AP_UAVCAN : public AP_CANDriver, public AP_ESC_Telem_Backend {
 public:
     AP_UAVCAN();
     ~AP_UAVCAN();
@@ -70,9 +96,10 @@ public:
     static AP_UAVCAN *get_uavcan(uint8_t driver_index);
 
     void init(uint8_t driver_index, bool enable_filters) override;
-
+    bool add_interface(AP_HAL::CANIface* can_iface) override;
+    
     uavcan::Node<0>* get_node() { return _node; }
-    uint8_t get_driver_index() { return _driver_index; }
+    uint8_t get_driver_index() const { return _driver_index; }
 
 
     ///// SRV output /////
@@ -81,6 +108,11 @@ public:
     ///// LED /////
     bool led_write(uint8_t led_index, uint8_t red, uint8_t green, uint8_t blue);
 
+    // buzzer
+    void set_buzzer_tone(float frequency, float duration_s);
+
+    // send RTCMStream packets
+    void send_RTCMStream(const uint8_t *data, uint32_t len);
 
     template <typename DataType_>
     class RegistryBinder {
@@ -91,7 +123,7 @@ public:
 
     public:
         RegistryBinder() :
-        	_uc(),
+            _uc(),
             _ffunc(),
             msg() {}
 
@@ -108,32 +140,22 @@ public:
         const uavcan::ReceivedDataStructure<DataType_> *msg;
     };
 
-private:
-    class SystemClock: public uavcan::ISystemClock, uavcan::Noncopyable {
-    public:
-        SystemClock() = default;
-
-        void adjustUtc(uavcan::UtcDuration adjustment) override {
-            utc_adjustment_usec = adjustment.toUSec();
-        }
-
-        uavcan::MonotonicTime getMonotonic() const override {
-            return uavcan::MonotonicTime::fromUSec(AP_HAL::micros64());
-        }
-
-        uavcan::UtcTime getUtc() const override {
-            return uavcan::UtcTime::fromUSec(AP_HAL::micros64() + utc_adjustment_usec);
-        }
-
-        static SystemClock& instance() {
-            static SystemClock inst;
-            return inst;
-        }
-
-    private:
-        int64_t utc_adjustment_usec;
+    // options bitmask
+    enum class Options : uint16_t {
+        DNA_CLEAR_DATABASE        = (1U<<0),
+        DNA_IGNORE_DUPLICATE_NODE = (1U<<1),
     };
 
+    // check if a option is set
+    bool option_is_set(Options option) const {
+        return (uint16_t(_options.get()) & uint16_t(option)) != 0;
+    }
+
+    // check if a option is set and if it is then reset it to
+    // 0. return true if it was set
+    bool check_and_reset_option(Options option);
+
+private:
     // This will be needed to implement if UAVCAN is used with multithreading
     // Such cases will be firmware update, etc.
     class RaiiSynchronizer {};
@@ -147,6 +169,15 @@ private:
     ///// LED /////
     void led_out_send();
 
+    // buzzer
+    void buzzer_send();
+
+    // SafetyState
+    void safety_state_send();
+
+    // send GNSS injection
+    void rtcm_stream_send();
+
     uavcan::PoolAllocator<UAVCAN_NODE_POOL_SIZE, UAVCAN_NODE_POOL_BLOCK_SIZE, AP_UAVCAN::RaiiSynchronizer> _node_allocator;
 
     // UAVCAN parameters
@@ -154,16 +185,15 @@ private:
     AP_Int32 _servo_bm;
     AP_Int32 _esc_bm;
     AP_Int16 _servo_rate_hz;
+    AP_Int16 _options;
 
     uavcan::Node<0> *_node;
 
     uint8_t _driver_index;
-    char _thread_name[9];
-    bool _initialized;
-#ifdef HAS_UAVCAN_SERVERS
-    AP_UAVCAN_Servers _servers;
-#endif
 
+    uavcan::CanIfaceMgr* _iface_mgr;
+    char _thread_name[13];
+    bool _initialized;
     ///// SRV output /////
     struct {
         uint16_t pulse;
@@ -190,6 +220,36 @@ private:
     } _led_conf;
 
     HAL_Semaphore _led_out_sem;
+
+    // buzzer
+    struct {
+        HAL_Semaphore sem;
+        float frequency;
+        float duration;
+        uint8_t pending_mask; // mask of interfaces to send to
+    } _buzzer;
+
+    // GNSS RTCM injection
+    struct {
+        HAL_Semaphore sem;
+        uint32_t last_send_ms;
+        ByteBuffer *buf;
+    } _rtcm_stream;
+    
+     // ESC
+
+    static HAL_Semaphore _telem_sem;
+
+    // safety status send state
+    uint32_t _last_safety_state_ms;
+
+    // incoming button handling
+    static void handle_button(AP_UAVCAN* ap_uavcan, uint8_t node_id, const ButtonCb &cb);
+    static void handle_traffic_report(AP_UAVCAN* ap_uavcan, uint8_t node_id, const TrafficReportCb &cb);
+    static void handle_actuator_status(AP_UAVCAN* ap_uavcan, uint8_t node_id, const ActuatorStatusCb &cb);
+    static void handle_ESC_status(AP_UAVCAN* ap_uavcan, uint8_t node_id, const ESCStatusCb &cb);
+    static bool is_esc_data_index_valid(const uint8_t index);
+    static void handle_debug(AP_UAVCAN* ap_uavcan, uint8_t node_id, const DebugCb &cb);
 };
 
-#endif /* AP_UAVCAN_H_ */
+#endif // #if HAL_ENABLE_LIBUAVCAN_DRIVERS

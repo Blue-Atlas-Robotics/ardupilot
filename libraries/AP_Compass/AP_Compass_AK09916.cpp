@@ -24,6 +24,9 @@
 #include <stdio.h>
 #include <AP_InertialSensor/AP_InertialSensor_Invensensev2.h>
 #include <GCS_MAVLink/GCS.h>
+#include <AP_BoardConfig/AP_BoardConfig.h>
+
+extern const AP_HAL::HAL &hal;
 
 #define REG_COMPANY_ID      0x00
 #define REG_DEVICE_ID       0x01
@@ -46,7 +49,9 @@
 
 #define ICM_WHOAMI_VAL      0xEA
 
+#define AK09915_Device_ID   0x10
 #define AK09916_Device_ID   0x09
+#define AK09918_Device_ID   0x0c
 #define AK09916_MILLIGAUSS_SCALE 10.0f
 
 extern const AP_HAL::HAL &hal;
@@ -102,9 +107,7 @@ AP_Compass_Backend *AP_Compass_AK09916::probe_ICM20948(AP_HAL::OwnPtr<AP_HAL::I2
         return nullptr;
     }
 
-    if (!dev->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
-        return nullptr;
-    }
+    dev->get_semaphore()->take_blocking();
 
     /* Allow ICM20x48 to shortcut auxiliary bus and host bus */
     uint8_t rval;
@@ -152,7 +155,7 @@ AP_Compass_Backend *AP_Compass_AK09916::probe_ICM20948(AP_HAL::OwnPtr<AP_HAL::I2
     if (dev->read_registers(REG_COMPANY_ID, (uint8_t *)&whoami, 2)) {
         // a device is replying on the AK09916 I2C address, don't
         // load the ICM20948
-        gcs().send_text(MAV_SEVERITY_INFO, "ICM20948: AK09916 bus conflict\n");
+        hal.console->printf("ICM20948: AK09916 bus conflict\n");
         goto fail;
     }
 
@@ -190,40 +193,43 @@ bool AP_Compass_AK09916::init()
 {
     AP_HAL::Semaphore *bus_sem = _bus->get_semaphore();
 
-    if (!bus_sem || !_bus->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
-        gcs().send_text(MAV_SEVERITY_INFO,"AK09916: Unable to get bus semaphore\n");
+    if (!bus_sem) {
         return false;
     }
+    _bus->get_semaphore()->take_blocking();
 
     if (!_bus->configure()) {
-        gcs().send_text(MAV_SEVERITY_INFO,"AK09916: Could not configure the bus\n");
+        hal.console->printf("AK09916: Could not configure the bus\n");
         goto fail;
     }
 
     if (!_reset()) {
-        gcs().send_text(MAV_SEVERITY_INFO,"AK09916: Reset Failed\n");
         goto fail;
     }
 
     if (!_check_id()) {
-        gcs().send_text(MAV_SEVERITY_INFO,"AK09916: Wrong id\n");
+        hal.console->printf("AK09916: Wrong id\n");
         goto fail;
     }
 
     if (!_setup_mode()) {
-        gcs().send_text(MAV_SEVERITY_INFO,"AK09916: Could not setup mode\n");
+        hal.console->printf("AK09916: Could not setup mode\n");
         goto fail;
     }
 
     if (!_bus->start_measurements()) {
-        gcs().send_text(MAV_SEVERITY_INFO,"AK09916: Could not start measurements\n");
+        hal.console->printf("AK09916: Could not start measurements\n");
         goto fail;
     }
 
     _initialized = true;
 
     /* register the compass instance in the frontend */
-    _compass_instance = register_compass();
+    _bus->set_device_type(_devtype);
+    if (!register_compass(_bus->get_bus_id(), _compass_instance)) {
+        goto fail;
+    }
+    set_dev_id(_compass_instance, _bus->get_bus_id());
 
     if (_force_external) {
         set_external(_compass_instance, true);
@@ -231,9 +237,6 @@ bool AP_Compass_AK09916::init()
 
     set_rotation(_compass_instance, _rotation);
     
-    _bus->set_device_type(DEVTYPE_AK09916);
-    set_dev_id(_compass_instance, _bus->get_bus_id());
-
     bus_sem->give();
 
     _bus->register_periodic_callback(10000, FUNCTOR_BIND_MEMBER(&AP_Compass_AK09916::_update, void));
@@ -288,6 +291,19 @@ void AP_Compass_AK09916::_update()
     _make_adc_sensitivity_adjustment(raw_field);
     raw_field *= AK09916_MILLIGAUSS_SCALE;
 
+#ifdef HAL_AK09916_HEATER_OFFSET
+    /*
+      the internal AK09916 can be impacted by the magnetic field from
+      a heater. We use the heater duty cycle to correct for the error
+     */
+    if (AP_HAL::Device::devid_get_bus_type(_bus->get_bus_id()) == AP_HAL::Device::BUS_TYPE_SPI) {
+        auto *bc = AP::boardConfig();
+        if (bc) {
+            raw_field += HAL_AK09916_HEATER_OFFSET * bc->get_heater_duty_cycle() * 0.01;
+        }
+    }
+#endif
+
     accumulate_sample(raw_field, _compass_instance, 10);
 }
 
@@ -297,9 +313,18 @@ bool AP_Compass_AK09916::_check_id()
         uint8_t deviceid = 0;
 
         /* Read AK09916's id */
-        if (_bus->register_read(REG_DEVICE_ID, &deviceid) &&
-            deviceid == AK09916_Device_ID) {
-            return true;
+        if (_bus->register_read(REG_DEVICE_ID, &deviceid)) {
+            switch (deviceid) {
+            case AK09915_Device_ID:
+                _devtype = DEVTYPE_AK09915;
+                return true;
+            case AK09916_Device_ID:
+                _devtype = DEVTYPE_AK09916;
+                return true;
+            case AK09918_Device_ID:
+                _devtype = DEVTYPE_AK09918;
+                return true;
+            }
         }
     }
 
@@ -307,7 +332,10 @@ bool AP_Compass_AK09916::_check_id()
 }
 
 bool AP_Compass_AK09916::_setup_mode() {
-    return _bus->register_write(REG_CNTL2, 0x08); //Continuous Mode 2
+    if (_devtype == DEVTYPE_AK09915) {
+        return _bus->register_write(REG_CNTL2, 0xA); //Continuous Mode 5 - 200Hz
+    }
+    return _bus->register_write(REG_CNTL2, 0x08); //Continuous Mode 4 - 100Hz
 }
 
 bool AP_Compass_AK09916::_reset()
@@ -377,7 +405,9 @@ bool AP_AK09916_BusDriver_Auxiliary::block_read(uint8_t reg, uint8_t *buf, uint3
          * We can only read a block when reading the block of sample values -
          * calling with any other value is a mistake
          */
-        assert(reg == REG_ST1);
+        if (reg != REG_ST1) {
+            return false;
+        }
 
         int n = _slave->read(buf);
         return n == static_cast<int>(size);

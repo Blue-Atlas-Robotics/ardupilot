@@ -42,6 +42,9 @@ void QuadPlane::motor_test_output()
     int16_t pwm = 0;   // pwm that will be output to the motors
 
     // calculate pwm based on throttle type
+    const int16_t thr_min_pwm = motors->get_pwm_output_min();
+    const int16_t thr_max_pwm = motors->get_pwm_output_max();
+
     switch (motor_test.throttle_type) {
     case MOTOR_TEST_THROTTLE_PERCENT:
         // sanity check motor_test.throttle value
@@ -77,6 +80,10 @@ void QuadPlane::motor_test_output()
 MAV_RESULT QuadPlane::mavlink_motor_test_start(mavlink_channel_t chan, uint8_t motor_seq, uint8_t throttle_type,
                                             uint16_t throttle_value, float timeout_sec, uint8_t motor_count)
 {
+    if (!available() || motors == nullptr) {
+        return MAV_RESULT_FAILED;
+    }
+
     if (motors->armed()) {
         gcs().send_text(MAV_SEVERITY_INFO, "Must be disarmed for motor test");
         return MAV_RESULT_FAILED;

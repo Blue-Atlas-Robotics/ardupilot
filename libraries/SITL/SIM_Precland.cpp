@@ -51,7 +51,7 @@ const AP_Param::GroupInfo SIM_Precland::var_info[] = {
 
     // @Param: HEIGHT
     // @DisplayName: Precland device origin's height above sealevel
-    // @Description: Precland device origin's height above sealevel
+    // @Description: Precland device origin's height above sealevel assume a 2x2m square as station base
     // @Units: cm
     // @Increment: 1
     // @Range: 0 10000
@@ -101,10 +101,8 @@ const AP_Param::GroupInfo SIM_Precland::var_info[] = {
     AP_GROUPEND
 };
 
-void SIM_Precland::update(const Location &loc, const Vector3f &position)
+void SIM_Precland::update(const Location &loc, const Vector3d &position)
 {
-    const uint32_t now = AP_HAL::millis();
-
     if (!_enable) {
         _healthy = false;
         return;
@@ -113,11 +111,6 @@ void SIM_Precland::update(const Location &loc, const Vector3f &position)
         _healthy = false;
         return;
     }
-
-    if (now - _last_update_ms < 1000.0f * (1.0f / _rate)) {
-        return;
-    }
-    _last_update_ms = now;
 
     const float distance_z = -position.z;
     const float origin_height_m = _origin_height * 0.01f;
@@ -131,8 +124,18 @@ void SIM_Precland::update(const Location &loc, const Vector3f &position)
             static_cast<int32_t>(_origin_height),
             Location::AltFrame::ABOVE_HOME);
     Vector2f center;
-    origin_center.get_vector_xy_from_origin_NE(center);
+    if (!origin_center.get_vector_xy_from_origin_NE(center)) {
+        _healthy = false;
+        return;
+    }
     center = center * 0.01f;  // cm to m
+    _over_precland_base = origin_center.get_distance(loc) <= 2.0f;
+
+    const uint32_t now = AP_HAL::millis();
+    if (now - _last_update_ms < 1000.0f * (1.0f / _rate)) {
+        return;
+    }
+    _last_update_ms = now;
 
     switch (_type) {
         case PRECLAND_TYPE_CONE: {
@@ -159,7 +162,7 @@ void SIM_Precland::update(const Location &loc, const Vector3f &position)
             break;
         }
     }
-    _target_pos = position - Vector3f(center.x, center.y, origin_height_m);
+    _target_pos = position - Vector3d(center.x, center.y, origin_height_m);
     _healthy = true;
 }
 

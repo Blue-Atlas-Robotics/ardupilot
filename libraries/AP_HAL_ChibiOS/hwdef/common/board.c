@@ -18,6 +18,7 @@
 #include "hal.h"
 #include "usbcfg.h"
 #include "stm32_util.h"
+#include "watchdog.h"
 
 
 /*===========================================================================*/
@@ -35,7 +36,7 @@
 /**
  * @brief   STM32 GPIO static initialization data.
  */
-#ifdef STM32F100_MCUCONF
+#if defined(STM32F100_MCUCONF) || defined(STM32F103_MCUCONF) || defined(STM32F105_MCUCONF)
 
 const PALConfig pal_default_config =
 {
@@ -46,7 +47,7 @@ const PALConfig pal_default_config =
   {VAL_GPIOE_ODR, VAL_GPIOE_CRL, VAL_GPIOE_CRH},
 };
 
-#else //Other than STM32F1 series
+#else //Other than STM32F1/F3 series
 
 /**
  * @brief   Type of STM32 GPIO port setup.
@@ -172,6 +173,12 @@ static void stm32_gpio_init(void) {
 #if defined(STM32H7)
   rccResetAHB4(STM32_GPIO_EN_MASK);
   rccEnableAHB4(STM32_GPIO_EN_MASK, true);
+#elif defined(STM32F3)
+  rccResetAHB(STM32_GPIO_EN_MASK);
+  rccEnableAHB(STM32_GPIO_EN_MASK, true);
+#elif defined(STM32G4)
+  rccResetAHB2(STM32_GPIO_EN_MASK);
+  rccEnableAHB2(STM32_GPIO_EN_MASK, true);
 #else
   rccResetAHB1(STM32_GPIO_EN_MASK);
   rccEnableAHB1(STM32_GPIO_EN_MASK, true);
@@ -221,18 +228,31 @@ static void stm32_gpio_init(void) {
  *          and before any other initialization.
  */
 void __early_init(void) {
-#ifndef STM32F100_MCUCONF
+#if !defined(STM32F1)
   stm32_gpio_init();
 #endif
   stm32_clock_init();
 #if defined(HAL_DISABLE_DCACHE)
   SCB_DisableDCache();
 #endif
+#if defined(STM32H7)
+  // disable cache on SRAM4 so we can use it for DMA
+  mpuConfigureRegion(MPU_REGION_5,
+                     0x38000000U,
+                     MPU_RASR_ATTR_AP_RW_RW |
+                     MPU_RASR_ATTR_NON_CACHEABLE |
+                     MPU_RASR_SIZE_64K |
+                     MPU_RASR_ENABLE);
+#endif
 }
 
 void __late_init(void) {
   halInit();
   chSysInit();
+  stm32_watchdog_save_reason();
+#ifndef HAL_BOOTLOADER_BUILD
+  stm32_watchdog_clear_reason();
+#endif
 #if CH_CFG_USE_HEAP == TRUE
   malloc_init();
 #endif

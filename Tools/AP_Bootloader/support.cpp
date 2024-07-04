@@ -9,11 +9,19 @@
 #include <AP_HAL_ChibiOS/hwdef/common/usbcfg.h>
 #include <AP_HAL_ChibiOS/hwdef/common/flash.h>
 #include <AP_HAL_ChibiOS/hwdef/common/stm32_util.h>
+#include <AP_Math/AP_Math.h>
 #include "support.h"
+#include "mcu_f1.h"
+#include "mcu_f3.h"
 #include "mcu_f4.h"
 #include "mcu_f7.h"
 #include "mcu_h7.h"
+#include "mcu_g4.h"
 
+// optional uprintf() code for debug
+// #define BOOTLOADER_DEBUG SD1
+
+#if defined(BOOTLOADER_DEV_LIST)
 static BaseChannel *uarts[] = { BOOTLOADER_DEV_LIST };
 #if HAL_USE_SERIAL == TRUE
 static SerialConfig sercfg;
@@ -25,38 +33,36 @@ static uint8_t last_uart;
 #define BOOTLOADER_BAUDRATE 115200
 #endif
 
-// optional uprintf() code for debug
-// #define BOOTLOADER_DEBUG SD7
-
-
 // #pragma GCC optimize("O0")
 
-int16_t cin(unsigned timeout_ms)
+static bool cin_data(uint8_t *data, uint8_t len, unsigned timeout_ms)
 {
-    uint8_t b = 0;
     for (uint8_t i=0; i<ARRAY_SIZE(uarts); i++) {
         if (locked_uart == -1 || locked_uart == i) {
-            if (chnReadTimeout(uarts[i], &b, 1, chTimeMS2I(timeout_ms)) == 1) {
+            if (chnReadTimeout(uarts[i], data, len, chTimeMS2I(timeout_ms)) == len) {
                 last_uart = i;
-                return b;
+                return true;
             }
         }
     }
     chThdSleepMicroseconds(500);
+    return false;
+}
+
+int16_t cin(unsigned timeout_ms)
+{
+    uint8_t b = 0;
+    if (cin_data(&b, 1, timeout_ms)) {
+        return b;
+    }
     return -1;
 }
 
 int cin_word(uint32_t *wp, unsigned timeout_ms)
 {
-    for (uint8_t i=0; i<ARRAY_SIZE(uarts); i++) {
-        if (locked_uart == -1 || locked_uart == i) {
-            if (chnReadTimeout(uarts[i], (uint8_t *)wp, 4, chTimeMS2I(timeout_ms)) == 4) {
-                last_uart = i;
-                return 0;
-            }
-        }
+    if (cin_data((uint8_t *)wp, 4, timeout_ms)) {
+        return 0;
     }
-    chThdSleepMicroseconds(500);
     return -1;
 }
 
@@ -65,10 +71,11 @@ void cout(uint8_t *data, uint32_t len)
 {
     chnWriteTimeout(uarts[last_uart], data, len, chTimeMS2I(100));
 }
+#endif // BOOTLOADER_DEV_LIST
 
 static uint32_t flash_base_page;
-static uint8_t num_pages;
-static const uint8_t *flash_base = (const uint8_t *)(0x08000000 + FLASH_BOOTLOADER_LOAD_KB*1024U);
+static uint16_t num_pages;
+static const uint8_t *flash_base = (const uint8_t *)(0x08000000 + (FLASH_BOOTLOADER_LOAD_KB + APP_START_OFFSET_KB)*1024U);
 
 /*
   initialise flash_base_page and num_pages
@@ -77,10 +84,21 @@ void flash_init(void)
 {
     uint32_t reserved = 0;
     num_pages = stm32_flash_getnumpages();
-    while (reserved < FLASH_BOOTLOADER_LOAD_KB * 1024U &&
+    /*
+      advance flash_base_page to account for (FLASH_BOOTLOADER_LOAD_KB + APP_START_OFFSET_KB)
+     */
+    while (reserved < (FLASH_BOOTLOADER_LOAD_KB + APP_START_OFFSET_KB) * 1024U &&
            flash_base_page < num_pages) {
         reserved += stm32_flash_getpagesize(flash_base_page);
         flash_base_page++;
+    }
+    /*
+      reduce num_pages to account for FLASH_RESERVE_END_KB
+     */
+    reserved = 0;
+    while (reserved < FLASH_RESERVE_END_KB * 1024U) {
+        reserved += stm32_flash_getpagesize(num_pages-1);
+        num_pages--;
     }
 }
 
@@ -90,7 +108,7 @@ void flash_set_keep_unlocked(bool set)
 }
 
 /*
-  read a word at offset relative to FLASH_BOOTLOADER_LOAD_KB
+  read a word at offset relative to flash base
  */
 uint32_t flash_func_read_word(uint32_t offset)
 {
@@ -147,6 +165,62 @@ uint32_t flash_func_read_sn(uint32_t idx)
     return *(uint32_t *)(UDID_START + idx);
 }
 
+/*
+  we use a write buffer for flashing, both for efficiency and to
+  ensure that we only ever do 32 byte aligned writes on STM32H7. If
+  you attempt to do writes on a H7 of less than 32 bytes or not
+  aligned then the flash can end up in a CRC error state, which can
+  generate a hardware fault (a double ECC error) on flash read, even
+  after a power cycle
+ */
+static struct {
+    uint32_t buffer[8];
+    uint32_t address;
+    uint8_t n;
+} fbuf;
+
+/*
+  flush the write buffer
+ */
+bool flash_write_flush(void)
+{
+    if (fbuf.n == 0) {
+        return true;
+    }
+    fbuf.n = 0;
+    return flash_func_write_words(fbuf.address, fbuf.buffer, ARRAY_SIZE(fbuf.buffer));
+}
+
+/*
+  write to flash with buffering to 32 bytes alignment
+ */
+bool flash_write_buffer(uint32_t address, const uint32_t *v, uint8_t nwords)
+{
+    if (fbuf.n > 0 && address != fbuf.address + fbuf.n*4) {
+        if (!flash_write_flush()) {
+            return false;
+        }
+    }
+    while (nwords > 0) {
+        if (fbuf.n == 0) {
+            fbuf.address = address;
+            memset(fbuf.buffer, 0xff, sizeof(fbuf.buffer));
+        }
+        uint8_t n = MIN(ARRAY_SIZE(fbuf.buffer)-fbuf.n, nwords);
+        memcpy(&fbuf.buffer[fbuf.n], v, n*4);
+        address += n*4;
+        v += n;
+        nwords -= n;
+        fbuf.n += n;
+        if (fbuf.n == ARRAY_SIZE(fbuf.buffer)) {
+            if (!flash_write_flush()) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 uint32_t get_mcu_id(void)
 {
     return *(uint32_t *)DBGMCU_BASE;
@@ -199,6 +273,7 @@ uint32_t get_mcu_desc(uint32_t max, uint8_t *revstr)
  */
 bool check_limit_flash_1M(void)
 {
+#ifdef STM32F427xx
     uint32_t idcode = (*(uint32_t *)DBGMCU_BASE);
     uint16_t revid = ((idcode & REVID_MASK) >> 16);
 
@@ -207,6 +282,7 @@ bool check_limit_flash_1M(void)
             return silicon_revs[i].limit_flash_size_1M;
         }
     }
+#endif
     return false;
 }
 
@@ -262,15 +338,19 @@ void uprintf(const char *fmt, ...)
 #ifdef BOOTLOADER_DEBUG
     va_list ap;
     static bool initialised;
+    static SerialConfig debug_sercfg;
     char umsg[200];
     if (!initialised) {
         initialised = true;
-        sercfg.speed = 57600;
-        sdStart(&BOOTLOADER_DEBUG, &sercfg);
+        debug_sercfg.speed = 57600;
+        sdStart(&BOOTLOADER_DEBUG, &debug_sercfg);
     }
     va_start(ap, fmt);
     uint32_t n = vsnprintf(umsg, sizeof(umsg), fmt, ap);
     va_end(ap);
+    if (n > sizeof(umsg)) {
+        n = sizeof(umsg);
+    }
     chnWriteTimeout(&BOOTLOADER_DEBUG, (const uint8_t *)umsg, n, chTimeMS2I(100));
 #endif
 }
@@ -342,6 +422,7 @@ void *memset(void *s, int c, size_t n)
     return s;
 }
 
+#if defined(BOOTLOADER_DEV_LIST)
 void lock_bl_port(void)
 {
     locked_uart = last_uart;
@@ -354,12 +435,12 @@ void init_uarts(void)
 {
 #if HAL_USE_SERIAL_USB == TRUE
     sduObjectInit(&SDU1);
-    sduStart(&SDU1, &serusbcfg);
+    sduStart(&SDU1, &serusbcfg1);
     
-    usbDisconnectBus(serusbcfg.usbp);
+    usbDisconnectBus(serusbcfg1.usbp);
     chThdSleepMilliseconds(1000);
-    usbStart(serusbcfg.usbp, &usbcfg);
-    usbConnectBus(serusbcfg.usbp);
+    usbStart(serusbcfg1.usbp, &usbcfg);
+    usbConnectBus(serusbcfg1.usbp);
 #endif
 
 #if HAL_USE_SERIAL == TRUE
@@ -394,3 +475,4 @@ void port_setbaud(uint32_t baudrate)
     sdStart((SerialDriver *)uarts[last_uart], &sercfg);
 #endif
 }
+#endif // BOOTLOADER_DEV_LIST

@@ -60,13 +60,13 @@ public:
         k_param_sysid_my_gcs,
 
         // Hardware/Software configuration
-        k_param_BoardConfig = 20, // Board configuration (PX4/Linux/etc)
+        k_param_BoardConfig = 20, // Board configuration (Pixhawk/Linux/etc)
         k_param_scheduler, // Scheduler (for debugging/perf_info)
         k_param_logger, // AP_Logger Logging
         k_param_serial_manager, // Serial ports, AP_SerialManager
         k_param_notify, // Notify Library, AP_Notify
         k_param_arming = 26, // Arming checks
-        k_param_BoardConfig_CAN,
+        k_param_can_mgr,
 
         // Sensor objects
         k_param_ins = 30, // AP_InertialSensor
@@ -145,6 +145,23 @@ public:
         k_param_jbtn_14,
         k_param_jbtn_15,
 
+        // 16 more for MANUAL_CONTROL extensions
+        k_param_jbtn_16,
+        k_param_jbtn_17,
+        k_param_jbtn_18,
+        k_param_jbtn_19,
+        k_param_jbtn_20,
+        k_param_jbtn_21,
+        k_param_jbtn_22,
+        k_param_jbtn_23,
+        k_param_jbtn_24,
+        k_param_jbtn_25,
+        k_param_jbtn_26,
+        k_param_jbtn_27,
+        k_param_jbtn_28,
+        k_param_jbtn_29,
+        k_param_jbtn_30,
+        k_param_jbtn_31,
 
         // PID Controllers
         k_param_p_pos_xy = 126, // deprecated
@@ -186,11 +203,12 @@ public:
         k_param_gcs_pid_mask = 178,
         k_param_throttle_filt,
         k_param_throttle_deadzone, // Used in auto-throttle modes
-        k_param_terrain_follow = 182,
+        k_param_terrain_follow = 182,   // deprecated
         k_param_rc_feel_rp,
         k_param_throttle_gain,
         k_param_cam_tilt_center, // deprecated
         k_param_frame_configuration,
+        k_param_control_frame,
 
         // Acro Mode parameters
         k_param_acro_yaw_p = 220, // Used in all modes for get_pilot_desired_yaw_rate
@@ -206,10 +224,15 @@ public:
         // RC_Mapper Library
         k_param_rcmap, // Disabled
 
+        k_param_gcs4,
+        k_param_gcs5,
+        k_param_gcs6,
+
         k_param_cam_slew_limit = 237, // deprecated
         k_param_lights_steps,
         k_param_pilot_speed_dn,
 
+        k_param_vehicle = 257, // vehicle common block of parameters
     };
 
     AP_Int16        format_version;
@@ -259,10 +282,6 @@ public:
     AP_Float        fs_ekf_thresh;
     AP_Int16        gcs_pid_mask;
 
-#if AP_TERRAIN_AVAILABLE && AC_TERRAIN
-    AP_Int8         terrain_follow;
-#endif
-
     AP_Int16        rc_speed; // speed of fast RC Channels in Hz
 
     AP_Float        gain_default;
@@ -290,6 +309,23 @@ public:
     JSButton        jbtn_13;
     JSButton        jbtn_14;
     JSButton        jbtn_15;
+    // 16 - 31 from manual_control extension
+    JSButton        jbtn_16;
+    JSButton        jbtn_17;
+    JSButton        jbtn_18;
+    JSButton        jbtn_19;
+    JSButton        jbtn_20;
+    JSButton        jbtn_21;
+    JSButton        jbtn_22;
+    JSButton        jbtn_23;
+    JSButton        jbtn_24;
+    JSButton        jbtn_25;
+    JSButton        jbtn_26;
+    JSButton        jbtn_27;
+    JSButton        jbtn_28;
+    JSButton        jbtn_29;
+    JSButton        jbtn_30;
+    JSButton        jbtn_31;
 
     // Acro parameters
     AP_Float        acro_rp_p;
@@ -301,6 +337,7 @@ public:
 
     AP_Float                surface_depth;
     AP_Int8                 frame_configuration;
+    AP_Int8                 control_frame;
 
     // Note: keep initializers here in the same order as they are declared
     // above.
@@ -323,7 +360,7 @@ public:
     AP_Gripper gripper;
 #endif
 
-#if PROXIMITY_ENABLED == ENABLED
+#if HAL_PROXIMITY_ENABLED
     // proximity (aka object avoidance) library
     AP_Proximity proximity;
 #endif
@@ -337,6 +374,9 @@ public:
 #ifdef ENABLE_SCRIPTING
     AP_Scripting scripting;
 #endif // ENABLE_SCRIPTING
+
+    // Airspeed
+    AP_Airspeed airspeed;
 
 };
 

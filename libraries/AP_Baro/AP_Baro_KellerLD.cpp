@@ -30,6 +30,8 @@
 
 extern const AP_HAL::HAL &hal;
 
+// sensor metadata register
+static const uint8_t CMD_METADATA_PMODE = 0x12;
 // Measurement range registers
 static const uint8_t CMD_PRANGE_MIN_MSB = 0x13;
 static const uint8_t CMD_PRANGE_MIN_LSB = 0x14;
@@ -67,9 +69,7 @@ bool AP_Baro_KellerLD::_init()
         return false;
     }
 
-    if (!_dev->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
-        AP_HAL::panic("PANIC: AP_Baro_KellerLD: failed to take serial semaphore for init");
-    }
+    _dev->get_semaphore()->take_blocking();
 
     // high retries for init
     _dev->set_retries(10);
@@ -83,6 +83,26 @@ bool AP_Baro_KellerLD::_init()
     // measurement range, but for some reason this isn't an issue when requesting measurements.
     // This is why we need to split the transfers with delays like this.
     // (Using AP_HAL::I2CDevice::set_split_transfers will not work with these sensors)
+    
+    // Read out sensor P-mode and select relevant pressure offset
+    cal_read_ok &= _dev->transfer(&CMD_METADATA_PMODE, 1, nullptr, 0);
+    hal.scheduler->delay(1);
+    cal_read_ok &= _dev->transfer(nullptr, 0, &data[0], 3);
+    hal.scheduler->delay(1);
+    
+    switch (data[2] & 0b11) {
+        case 0:
+            // PR-mode Vented Gauge sensor (zero at 1 atm)
+            _p_mode_offset = 1.01325;
+            break;
+        case 1:
+            // PA-mode Sealed Gauge sensor (zero at 1 bar)
+            _p_mode_offset = 1.0;
+            break;
+        default:
+            // PAA-mode Absolute sensor (zero at vacuum), or undefined mode
+            _p_mode_offset = 0.0;
+    }
 
     // Read out pressure measurement range
     cal_read_ok &= _dev->transfer(&CMD_PRANGE_MIN_MSB, 1, nullptr, 0);
@@ -144,6 +164,9 @@ bool AP_Baro_KellerLD::_init()
 
     _instance = _frontend.register_sensor();
 
+    _dev->set_device_type(DEVTYPE_BARO_KELLERLD);
+    set_bus_id(_instance, _dev->get_bus_id());
+    
     _frontend.set_type(_instance, AP_Baro::BARO_TYPE_WATER);
 
     // lower retries for run
@@ -165,7 +188,7 @@ bool AP_Baro_KellerLD::_init()
 bool AP_Baro_KellerLD::_read()
 {
     uint8_t data[5];
-    if (!_dev->transfer(0x0, 1, data, sizeof(data))) {
+    if (!_dev->transfer(nullptr, 0, data, sizeof(data))) {
         Debug("Keller LD read failed!");
         return false;
     }
@@ -247,9 +270,8 @@ void AP_Baro_KellerLD::update()
     uint16_t raw_temperature_avg = sum_temperature / num_samples;
 
     // per datasheet
-    float pressure = (raw_pressure_avg - 16384) * (_p_max - _p_min) / 32768 + _p_min;
+    float pressure = (raw_pressure_avg - 16384) * (_p_max - _p_min) / 32768 + _p_min + _p_mode_offset;
     pressure *= 100000; // bar -> Pascal
-    pressure += 101300; // MSL pressure offset
     float temperature = ((raw_temperature_avg >> 4) - 24) * 0.05f - 50;
 
     _copy_to_frontend(_instance, pressure, temperature);

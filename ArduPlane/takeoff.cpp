@@ -18,6 +18,7 @@ bool Plane::auto_takeoff_check(void)
     // reset all takeoff state if disarmed
     if (!hal.util->get_soft_armed()) {
         memset(&takeoff_state, 0, sizeof(takeoff_state));
+        auto_state.baro_takeoff_alt = barometer.get_altitude();
         return false;
     }
 
@@ -133,7 +134,7 @@ void Plane::takeoff_calc_roll(void)
     const float lim1 = 5;    
     // at 15m allow for full roll
     const float lim2 = 15;
-    if (baro_alt < auto_state.baro_takeoff_alt+lim1) {
+    if ((baro_alt < auto_state.baro_takeoff_alt+lim1) || (auto_state.highest_airspeed < g.takeoff_rotate_speed)) {
         roll_limit = g.level_roll_limit;
     } else if (baro_alt < auto_state.baro_takeoff_alt+lim2) {
         float proportion = (baro_alt - (auto_state.baro_takeoff_alt+lim1)) / (lim2 - lim1);
@@ -164,12 +165,19 @@ void Plane::takeoff_calc_pitch(void)
             nav_pitch_cd = takeoff_pitch_min_cd;
         }
     } else {
-        nav_pitch_cd = ((gps.ground_speed()*100) / (float)aparm.airspeed_cruise_cm) * auto_state.takeoff_pitch_cd;
-        nav_pitch_cd = constrain_int32(nav_pitch_cd, 500, auto_state.takeoff_pitch_cd);
+        if (g.takeoff_rotate_speed > 0) {
+            // Rise off ground takeoff so delay rotation until ground speed indicates adequate airspeed
+            nav_pitch_cd = ((gps.ground_speed()*100) / (float)aparm.airspeed_cruise_cm) * auto_state.takeoff_pitch_cd;
+            nav_pitch_cd = constrain_int32(nav_pitch_cd, 500, auto_state.takeoff_pitch_cd); 
+        } else {
+            // Doing hand or catapult launch so need at least 5 deg pitch to prevent initial height loss
+            nav_pitch_cd = MAX(auto_state.takeoff_pitch_cd, 500);
+        }
     }
 
     if (aparm.stall_prevention != 0) {
-        if (mission.get_current_nav_cmd().id == MAV_CMD_NAV_TAKEOFF) {
+        if (mission.get_current_nav_cmd().id == MAV_CMD_NAV_TAKEOFF ||
+            control_mode == &mode_takeoff) {
             // during takeoff we want to prioritise roll control over
             // pitch. Apply a reduction in pitch demand if our roll is
             // significantly off. The aim of this change is to
@@ -210,7 +218,7 @@ int16_t Plane::get_takeoff_pitch_min_cd(void)
                 relative_alt_cm >= 1000 &&
                 sec_to_target <= g.takeoff_pitch_limit_reduction_sec) {
                 // make a note of that altitude to use it as a start height for scaling
-                gcs().send_text(MAV_SEVERITY_INFO, "Takeoff level-off starting at %dm", remaining_height_to_target_cm/100);
+                gcs().send_text(MAV_SEVERITY_INFO, "Takeoff level-off starting at %dm", int(remaining_height_to_target_cm/100));
                 auto_state.height_below_takeoff_to_level_off_cm = remaining_height_to_target_cm;
             }
         }
@@ -260,24 +268,6 @@ return_zero:
     }
     return 0;
 }
-
-
-/*
-  called when an auto-takeoff is complete
- */
-void Plane::complete_auto_takeoff(void)
-{
-#if GEOFENCE_ENABLED == ENABLED
-    if (g.fence_autoenable > 0) {
-        if (! geofence_set_enabled(true, AUTO_TOGGLED)) {
-            gcs().send_text(MAV_SEVERITY_NOTICE, "Enable fence failed (cannot autoenable");
-        } else {
-            gcs().send_text(MAV_SEVERITY_INFO, "Fence enabled (autoenabled)");
-        }
-    }
-#endif
-}
-
 
 #if LANDING_GEAR_ENABLED == ENABLED
 /*

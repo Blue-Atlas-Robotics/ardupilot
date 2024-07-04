@@ -8,6 +8,7 @@ void Plane::parachute_check()
 {
 #if PARACHUTE == ENABLED
     parachute.update();
+    parachute.check_sink_rate();
 #endif
 }
 
@@ -64,5 +65,4 @@ bool Plane::parachute_manual_release()
 #endif
     return true;    
 }
-
 #endif

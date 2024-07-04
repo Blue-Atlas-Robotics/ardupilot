@@ -18,6 +18,8 @@
 
 #include <AP_HAL/AP_HAL.h>
 #include "AP_BoardConfig.h"
+#include <GCS_MAVLink/GCS.h>
+#include <AP_Math/crc.h>
 #include <stdio.h>
 
 extern const AP_HAL::HAL& hal;
@@ -28,9 +30,13 @@ extern const AP_HAL::HAL& hal;
 void AP_BoardConfig::board_init_safety()
 {
 #if HAL_HAVE_SAFETY_SWITCH
-    if (state.safety_enable.get() == 0) {
+    bool force_safety_off = (state.safety_enable.get() == 0);
+    if (!force_safety_off && hal.util->was_watchdog_safety_off()) {
+        gcs().send_text(MAV_SEVERITY_INFO, "Forcing safety off for watchdog\n");
+        force_safety_off = true;
+    }
+    if (force_safety_off) {
         hal.rcout->force_safety_off();
-        hal.rcout->force_safety_no_wait();
         // wait until safety has been turned off
         uint8_t count = 20;
         while (hal.util->safety_switch_state() != AP_HAL::Util::SAFETY_ARMED && count--) {
@@ -38,6 +44,24 @@ void AP_BoardConfig::board_init_safety()
         }
     }
 #endif
+}
+
+/*
+  init debug pins. We set debug pins as input if BRD_OPTIONS bit for debug enable is not set
+  this prevents possible ESD issues on the debug pins
+ */
+void AP_BoardConfig::board_init_debug()
+{
+#ifndef HAL_BUILD_AP_PERIPH
+    if ((_options & BOARD_OPTION_DEBUG_ENABLE) == 0) {
+#ifdef HAL_GPIO_PIN_JTCK_SWCLK
+        palSetLineMode(HAL_GPIO_PIN_JTCK_SWCLK, PAL_MODE_INPUT);
+#endif
+#ifdef HAL_GPIO_PIN_JTMS_SWDIO
+        palSetLineMode(HAL_GPIO_PIN_JTMS_SWDIO, PAL_MODE_INPUT);
+#endif
+    }
+#endif // HAL_BUILD_AP_PERIPH
 }
 
 
@@ -72,15 +96,17 @@ void AP_BoardConfig::board_setup_drivers(void)
     // run board auto-detection
     board_autodetect();
 
+#if HAL_HAVE_IMU_HEATER
     if (state.board_type == PX4_BOARD_PH2SLIM ||
         state.board_type == PX4_BOARD_PIXHAWK2) {
-        _imu_target_temperature.set_default(45);
-        if (_imu_target_temperature.get() < 0) {
+        heater.imu_target_temperature.set_default(45);
+        if (heater.imu_target_temperature.get() < 0) {
             // don't allow a value of -1 on the cube, or it could cook
             // the IMU
-            _imu_target_temperature.set(45);
+            heater.imu_target_temperature.set(45);
         }
     }
+#endif
 
     px4_configured_board = (enum px4_board_type)state.board_type.get();
 
@@ -108,7 +134,7 @@ void AP_BoardConfig::board_setup_drivers(void)
     case PX4_BOARD_MINDPXV2:
         break;
     default:
-        sensor_config_error("Unknown board type");
+        config_error("Unknown board type");
         break;
     }
 }
@@ -128,9 +154,8 @@ bool AP_BoardConfig::spi_check_register(const char *devname, uint8_t regnum, uin
         return false;
     }
     dev->set_read_flag(read_flag);
-    if (!dev->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
-        return false;
-    }
+    dev->get_semaphore()->take_blocking();
+    dev->set_speed(AP_HAL::Device::SPEED_LOW);
     uint8_t v;
     if (!dev->read_registers(regnum, &v, 1)) {
 #if SPI_PROBE_DEBUG
@@ -146,6 +171,101 @@ bool AP_BoardConfig::spi_check_register(const char *devname, uint8_t regnum, uin
     return v == value;
 }
 
+
+#define INV2REG_BANK_SEL 0x7F
+/*
+  check a SPI device for a register value
+ */
+bool AP_BoardConfig::spi_check_register_inv2(const char *devname, uint8_t regnum, uint8_t value, uint8_t read_flag)
+{
+    auto dev = hal.spi->get_device(devname);
+    if (!dev) {
+#if SPI_PROBE_DEBUG
+        hal.console->printf("%s: no device\n", devname);
+#endif
+        return false;
+    }
+    dev->set_read_flag(read_flag);
+    dev->get_semaphore()->take_blocking();
+    dev->set_speed(AP_HAL::Device::SPEED_LOW);
+    uint8_t v;
+    // select bank 0 for who am i
+    dev->write_register(INV2REG_BANK_SEL, 0, false);
+    if (!dev->read_registers(regnum, &v, 1)) {
+#if SPI_PROBE_DEBUG
+        hal.console->printf("%s: reg %02x read fail\n", devname, (unsigned)regnum);
+#endif
+        dev->get_semaphore()->give();
+        return false;
+    }
+    dev->get_semaphore()->give();
+#if SPI_PROBE_DEBUG
+    hal.console->printf("%s: reg %02x expected:%02x got:%02x\n", devname, (unsigned)regnum, (unsigned)value, (unsigned)v);
+#endif
+    return v == value;
+}
+
+#if defined(HAL_VALIDATE_BOARD)
+bool AP_BoardConfig::check_ms5611(const char* devname) {
+    auto dev = hal.spi->get_device(devname);
+    if (!dev) {
+#if SPI_PROBE_DEBUG
+        hal.console->printf("%s: no device\n", devname);
+#endif
+        return false;
+    }
+
+    AP_HAL::Semaphore *dev_sem = dev->get_semaphore();
+
+    if (!dev_sem) {
+        return false;
+    }
+    dev_sem->take_blocking();
+
+    static const uint8_t CMD_MS56XX_RESET = 0x1E;
+    static const uint8_t CMD_MS56XX_PROM = 0xA0;
+
+    dev->transfer(&CMD_MS56XX_RESET, 1, nullptr, 0);
+    hal.scheduler->delay(4);
+
+    uint16_t prom[8];
+    bool all_zero = true;
+    for (uint8_t i = 0; i < 8; i++) {
+        const uint8_t reg = CMD_MS56XX_PROM + (i << 1);
+        uint8_t val[2];
+        if (!dev->transfer(&reg, 1, val, sizeof(val))) {
+            dev_sem->give();
+#if SPI_PROBE_DEBUG
+            hal.console->printf("%s: transfer fail\n", devname);
+#endif
+            return false;
+        }
+        prom[i] = (val[0] << 8) | val[1];
+
+        if (prom[i] != 0) {
+            all_zero = false;
+        }
+    }
+    dev_sem->give();
+
+    uint16_t crc_read = prom[7]&0xf;
+    prom[7] &= 0xff00;
+
+    if (crc_read != crc_crc4(prom) || all_zero) {
+#if SPI_PROBE_DEBUG
+        hal.console->printf("%s: crc fail\n", devname);
+#endif
+        return false;
+    }
+
+#if SPI_PROBE_DEBUG
+    hal.console->printf("%s: found successfully\n", devname);
+#endif
+
+    return true;
+}
+#endif // HAL_VALIDATE_BOARD
+
 #define MPUREG_WHOAMI 0x75
 #define MPU_WHOAMI_MPU60X0  0x68
 #define MPU_WHOAMI_MPU9250  0x71
@@ -154,9 +274,13 @@ bool AP_BoardConfig::spi_check_register(const char *devname, uint8_t regnum, uin
 
 #define LSMREG_WHOAMI 0x0f
 #define LSM_WHOAMI_LSM303D 0x49
+#define LSM_WHOAMI_L3GD20 0xd4
 
 #define INV2REG_WHOAMI 0x00
+
 #define INV2_WHOAMI_ICM20948 0xEA
+#define INV2_WHOAMI_ICM20649 0xE1
+
 /*
   validation of the board type
  */
@@ -175,13 +299,13 @@ void AP_BoardConfig::validate_board_type(void)
          spi_check_register("icm20608_ext", MPUREG_WHOAMI, MPU_WHOAMI_ICM20602) ||
          spi_check_register("icm20602_ext", MPUREG_WHOAMI, MPU_WHOAMI_ICM20602)) &&
         (spi_check_register("lsm9ds0_ext_am", LSMREG_WHOAMI, LSM_WHOAMI_LSM303D) ||
-         spi_check_register("icm20948_ext", INV2REG_WHOAMI, INV2_WHOAMI_ICM20948))) {
+         spi_check_register_inv2("icm20948_ext", INV2REG_WHOAMI, INV2_WHOAMI_ICM20948))) {
         // Pixhawk2 has LSM303D and MPUxxxx on external bus. If we
         // detect those, then force PIXHAWK2, even if the user has
         // configured for PIXHAWK1
 #if !defined(CONFIG_ARCH_BOARD_PX4FMU_V3) && !defined(HAL_CHIBIOS_ARCH_FMUV3)
         // force user to load the right firmware
-        sensor_config_error("Pixhawk2 requires FMUv3 firmware");        
+        config_error("Pixhawk2 requires FMUv3 firmware");        
 #endif
         state.board_type.set(PX4_BOARD_PIXHAWK2);
         hal.console->printf("Forced PIXHAWK2\n");
@@ -198,6 +322,16 @@ void AP_BoardConfig::validate_board_type(void)
  */
 void AP_BoardConfig::board_autodetect(void)
 {
+#if defined(HAL_VALIDATE_BOARD)
+    const char* errored_check = HAL_VALIDATE_BOARD;
+    if (errored_check == nullptr) {
+        return;
+    } else {
+        config_error("Board Validation %s Failed", errored_check);
+        return;
+    }
+#endif
+
     if (state.board_type != PX4_BOARD_AUTO) {
         validate_board_type();
         // user has chosen a board type
@@ -218,7 +352,7 @@ void AP_BoardConfig::board_autodetect(void)
          spi_check_register("icm20608_ext", MPUREG_WHOAMI, MPU_WHOAMI_ICM20602) ||
          spi_check_register("icm20602_ext", MPUREG_WHOAMI, MPU_WHOAMI_ICM20602)) &&
         (spi_check_register("lsm9ds0_ext_am", LSMREG_WHOAMI, LSM_WHOAMI_LSM303D) ||
-         spi_check_register("icm20948_ext", INV2REG_WHOAMI, INV2_WHOAMI_ICM20948))) {
+         spi_check_register_inv2("icm20948_ext", INV2REG_WHOAMI, INV2_WHOAMI_ICM20948))) {
         // Pixhawk2 has LSM303D and MPUxxxx on external bus
         state.board_type.set(PX4_BOARD_PIXHAWK2);
         hal.console->printf("Detected PIXHAWK2\n");
@@ -238,7 +372,7 @@ void AP_BoardConfig::board_autodetect(void)
         state.board_type.set(PX4_BOARD_PIXHAWK);
         hal.console->printf("Detected Pixhawk\n");
     } else {
-        sensor_config_error("Unable to detect board type");
+        config_error("Unable to detect board type");
     }
 #elif defined(CONFIG_ARCH_BOARD_PX4FMU_V4) || defined(HAL_CHIBIOS_ARCH_FMUV4)
     // only one choice
@@ -294,10 +428,31 @@ void AP_BoardConfig::board_autodetect(void)
 void AP_BoardConfig::board_setup_uart()
 {
 #if AP_FEATURE_RTSCTS
-    hal.uartC->set_flow_control((AP_HAL::UARTDriver::flow_control)state.ser1_rtscts.get());
-    if (hal.uartD != nullptr) {
-        hal.uartD->set_flow_control((AP_HAL::UARTDriver::flow_control)state.ser2_rtscts.get());
+#ifdef HAL_HAVE_RTSCTS_SERIAL1
+    if (hal.serial(1) != nullptr) {
+        hal.serial(1)->set_flow_control((AP_HAL::UARTDriver::flow_control)state.ser_rtscts[1].get());
     }
+#endif
+#ifdef HAL_HAVE_RTSCTS_SERIAL2
+    if (hal.serial(2) != nullptr) {
+        hal.serial(2)->set_flow_control((AP_HAL::UARTDriver::flow_control)state.ser_rtscts[2].get());
+    }
+#endif
+#ifdef HAL_HAVE_RTSCTS_SERIAL3
+    if (hal.serial(3) != nullptr) {
+        hal.serial(3)->set_flow_control((AP_HAL::UARTDriver::flow_control)state.ser_rtscts[3].get());
+    }
+#endif
+#ifdef HAL_HAVE_RTSCTS_SERIAL4
+    if (hal.serial(4) != nullptr) {
+        hal.serial(4)->set_flow_control((AP_HAL::UARTDriver::flow_control)state.ser_rtscts[4].get());
+    }
+#endif
+#ifdef HAL_HAVE_RTSCTS_SERIAL5
+    if (hal.serial(5) != nullptr) {
+        hal.serial(5)->set_flow_control((AP_HAL::UARTDriver::flow_control)state.ser_rtscts[5].get());
+    }
+#endif
 #endif
 }
 
@@ -348,9 +503,9 @@ void AP_BoardConfig::board_setup()
 
 #ifdef HAL_GPIO_PWM_VOLT_PIN
     if (_pwm_volt_sel == 0) {
-        hal.gpio->write(HAL_GPIO_PWM_VOLT_PIN, 1); //set pin for 3.3V PWM Output
+        hal.gpio->write(HAL_GPIO_PWM_VOLT_PIN, HAL_GPIO_PWM_VOLT_3v3); //set pin for 3.3V PWM Output
     } else if (_pwm_volt_sel == 1) {
-        hal.gpio->write(HAL_GPIO_PWM_VOLT_PIN, 0); //set pin for 5V PWM Output
+        hal.gpio->write(HAL_GPIO_PWM_VOLT_PIN, !HAL_GPIO_PWM_VOLT_3v3); //set pin for 5V PWM Output
     }
 #endif
     board_setup_uart();
