@@ -10,7 +10,7 @@ void Sub::enable_motor_output()
 void Sub::motors_output()
 {
     // Motor detection mode controls the thrusters directly
-    if (control_mode == MOTOR_DETECT){
+    if (control_mode == RAW){
         return;
     }
     // check if we are performing the motor test

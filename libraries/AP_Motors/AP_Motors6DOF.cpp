@@ -316,7 +316,7 @@ int16_t AP_Motors6DOF::calc_thrust_to_pwm(float thrust_in) const
     pwm = -1 * static_cast<int16_t>(safe_sqrt(x*x*20.56590334031135 + x*1262.4149340710521 + 110.90447379277136));
   }
 
-  return constrain_int16(pwm + mid_pwm, _throttle_radio_min /*1100*/, _throttle_radio_max /*1900*/);
+  return constrain_int16(pwm + mid_pwm, get_pwm_output_min(), get_pwm_output_max());
 //  return constrain_int16(1500 + thrust_in * 400, _throttle_radio_min, _throttle_radio_max);
 }
 
@@ -397,7 +397,7 @@ void AP_Motors6DOF::output_armed_stabilizing()
         output_armed_stabilizing_vectored();
     } else if ((sub_frame_t)_active_frame_class == SUB_FRAME_VECTORED_6DOF) {
         output_armed_stabilizing_vectored_6dof();
-    } else if ((sub_frame_t)_last_frame_class == SUB_FRAME_CUSTOM) {
+    } else if ((sub_frame_t)_active_frame_class == SUB_FRAME_CUSTOM) {
         output_armed_stabilizing_custom();
     } else {
         uint8_t i;                          // general purpose counter
@@ -553,12 +553,11 @@ void AP_Motors6DOF::output_armed_stabilizing_custom() {
   }
 
   // initialize limits flags
-  limit.roll_pitch = false;
+  limit.roll = false;
+  limit.pitch = false;
   limit.yaw = false;
   limit.throttle_lower = false;
   limit.throttle_upper = false;
-  limit.throttle_upper = false;
-  limit.throttle_lower = false;
 
 //  if (m_debug_counter > 100) {
 //    gcs().send_text(MAV_SEVERITY_DEBUG, "%.2f|%.2f|%.2f|%.2f|%.2f|%.2f",

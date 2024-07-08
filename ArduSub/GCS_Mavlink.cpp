@@ -135,19 +135,20 @@ void GCS_MAVLINK_Sub::send_attitude_quaternion()
         q.q4,
         omega.x,
         omega.y,
-        omega.z);
+        omega.z,
+        nullptr);
 }
 
 
 void GCS_MAVLINK_Sub::send_pwms()
 {
-  mavlink_channel_t chan = MAVLINK_COMM_0;
+  mavlink_channel_t chan_local = MAVLINK_COMM_0;
   uint32_t time_boot_ms = AP_HAL::millis();
   uint8_t port = 0;
   uint8_t rssi = 0;
 
   mavlink_msg_rc_channels_scaled_send(
-      chan,
+      chan_local,
       time_boot_ms,
       port,
       sub.motors.get_raw_command(AP_MOTORS_MOT_1),
@@ -180,7 +181,7 @@ void GCS_MAVLINK_Sub::send_control_system_state()
 
     q_acc = q_btn.inverse() * q_acc * q_btn;
 
-    mavlink_channel_t chan = MAVLINK_COMM_0;
+    mavlink_channel_t chan_local = MAVLINK_COMM_0;
     mavlink_control_system_state_t control_system_state = {};
 
     control_system_state.time_usec = AP_HAL::micros64(); /*< [us] Timestamp (UNIX Epoch time or time since system boot). The receiving end can infer timestamp format (since 1.1.1970 or since system boot) by checking for the magnitude the number.*/
@@ -202,7 +203,7 @@ void GCS_MAVLINK_Sub::send_control_system_state()
   //  control_system_state.pitch_rate; /*< [rad/s] Angular rate in pitch axis*/
   //  control_system_state.yaw_rate; /*< [rad/s] Angular rate in yaw axis*/
 
-    mavlink_msg_control_system_state_send_struct(chan, &control_system_state);
+    mavlink_msg_control_system_state_send_struct(chan_local, &control_system_state);
 }
 
 
@@ -890,7 +891,7 @@ void GCS_MAVLINK_Sub::handleMessage(const mavlink_message_t &msg)
 
     case MAVLINK_MSG_ID_RC_CHANNELS_RAW:
         mavlink_rc_channels_raw_t packet;
-        mavlink_msg_rc_channels_raw_decode(msg, &packet);
+        mavlink_msg_rc_channels_raw_decode(&msg, &packet);
 
         sub.failsafe.last_pilot_input_ms = AP_HAL::millis();
 
