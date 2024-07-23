@@ -155,6 +155,7 @@ class generate_apj(Task.Task):
             "version": "0.1",
             "image_size": len(img),
             "flash_total": int(self.env.FLASH_TOTAL),
+            "image_maxsize": int(self.env.FLASH_TOTAL), #px_uploader.py has requirement for this environment variable to handle the progress bar for uploading a new build. Same value as flash_total. 
             "flash_free": int(self.env.FLASH_TOTAL) - len(img),
             "git_identity": self.generator.bld.git_head_hash(short=True),
             "board_revision": 0,
