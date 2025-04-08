@@ -46,7 +46,7 @@ void Sub::init_ardupilot()
         break;
     }
 #else
-    AP_Param::set_default_by_name("GND_EXT_BUS", 1);
+    AP_Param::set_default_by_name("GND_EXT_BUS", 3);
 #endif
 
     // identify ourselves correctly with the ground station
